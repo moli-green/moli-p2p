@@ -11,7 +11,7 @@ echo ">>> 🚀 Starting Manual Deployment (Pre-built Binaries)..."
 
 # 1. STOP Service
 echo ">>> 🛑 Stopping Service..."
-ssh $TARGET_HOST "sudo systemctl stop moli-server || true"
+ssh $TARGET_HOST "sudo systemctl stop moli-p2p || true"
 
 # 2. Upload Server Binary
 echo ">>> 📤 Uploading Server Binary..."
@@ -32,6 +32,6 @@ ssh $TARGET_HOST "sudo cp $TARGET_DIR/moli-p2p.service /etc/systemd/system/ && s
 
 # 5. START Service
 echo ">>> ✅ Starting Service..."
-ssh $TARGET_HOST "sudo systemctl start moli-server"
+ssh $TARGET_HOST "sudo systemctl enable moli-p2p && sudo systemctl restart moli-p2p"
 
 echo ">>> 🎉 Deployment Complete!"
