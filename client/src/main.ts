@@ -3,6 +3,12 @@ import { P2PNetwork } from './P2PNetwork';
 import { PeerSession } from './PeerSession';
 import * as jdenticon from 'jdenticon';
 import { Vault } from './lib/vault';
+import {
+  RENDER_INTERVAL_MS,
+  MAX_GALLERY_ITEMS,
+  TOAST_DURATION_MS,
+  NETWORK_TIMEOUT_MS
+} from './constants';
 
 declare global {
   interface Window {
@@ -18,190 +24,167 @@ declare global {
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
-app.innerHTML = `
-  <div id="app-container">
-    <div class="glass-panel header-compact">
-      <div class="header-row-primary">
-        <div>
-        <h1 style="margin:0; line-height:1.2;">Moli P2P</h1>
-          <p style="margin:2px 0 0 0; opacity: 0.7; font-size: 0.8rem;">
-            Autonomous Distributed Gallery <span id="peer-count" class="peer-count" style="font-size:0.8em">...</span>
-          </p>
-        </div>
+// --- 1. App Shell Construction (DOM API) ---
+const appContainer = document.createElement('div');
+appContainer.id = 'app-container';
 
-        <div class="identity-section">
-          <span id="my-id-icon" class="id-icon"></span>
-          <span id="my-id" class="id-text">...</span>
-          <button id="id-burn-btn" class="burn-tiny-btn">🔥</button>
-          <button id="help-btn" class="help-btn" title="Manual / Help">?</button>
-        </div>
-      </div>
+// -- Header --
+const glassPanel = document.createElement('div');
+glassPanel.className = 'glass-panel header-compact';
 
-      <div class="header-row-secondary">
-        <div class="stats-group">
-          <div id="buffer-indicator" class="buffer-indicator">
-            <span>PENDING</span>
-            <span id="buffer-count" class="buffer-count">0</span>
-          </div>
-          <span style="font-size: 0.8em; opacity: 0.5; margin-left: 10px;">
-            <span id="discovered-count">0</span> Items
-          </span>
-        </div>
+const headerRowPrimary = document.createElement('div');
+headerRowPrimary.className = 'header-row-primary';
 
-        <div class="controls-group">
-          <div class="ticker-controls-compact">
-            <button id="ticker-pause" class="ticker-btn">Pause</button>
-            <input type="range" id="speed-slider" class="speed-slider" min="500" max="5000" step="500" value="2000" title="Speed" />
-            <span id="speed-value" style="font-size: 0.8em; margin-left: 8px;">2.0s</span>
-          </div>
-          <button id="broadcast-soul-btn" class="broadcast-compact-btn">✨ Broadcast</button>
-        </div>
-      </div>
-    </div>
+const titleGroup = document.createElement('div');
+const h1 = document.createElement('h1');
+h1.style.margin = '0';
+h1.style.lineHeight = '1.2';
+h1.textContent = 'Moli P2P';
 
-      <div id="gallery"></div>
+const pSubtitle = document.createElement('p');
+pSubtitle.style.margin = '2px 0 0 0';
+pSubtitle.style.opacity = '0.7';
+pSubtitle.style.fontSize = '0.8rem';
+pSubtitle.appendChild(document.createTextNode('Autonomous Distributed Gallery '));
+const peerCountSpan = document.createElement('span');
+peerCountSpan.id = 'peer-count';
+peerCountSpan.className = 'peer-count';
+peerCountSpan.style.fontSize = '0.8em';
+peerCountSpan.textContent = '...';
+pSubtitle.appendChild(peerCountSpan);
+titleGroup.appendChild(h1);
+titleGroup.appendChild(pSubtitle);
 
-      <div id="debug-container" class="collapsed">
-        <div class="debug-header" id="debug-toggle">System Logs (Click to toggle)</div>
-        <div id="debug-log"></div>
-      </div>
+const identitySection = document.createElement('div');
+identitySection.className = 'identity-section';
+const myIdIcon = document.createElement('span');
+myIdIcon.id = 'my-id-icon';
+myIdIcon.className = 'id-icon';
+const myIdSpan = document.createElement('span');
+myIdSpan.id = 'my-id';
+myIdSpan.className = 'id-text';
+myIdSpan.textContent = '...';
+const idBurnBtn = document.createElement('button');
+idBurnBtn.id = 'id-burn-btn';
+idBurnBtn.className = 'burn-tiny-btn';
+idBurnBtn.textContent = '🔥';
+const helpBtn = document.createElement('button');
+helpBtn.id = 'help-btn';
+helpBtn.className = 'help-btn';
+helpBtn.title = 'Manual / Help';
+helpBtn.textContent = '?';
+identitySection.appendChild(myIdIcon);
+identitySection.appendChild(myIdSpan);
+identitySection.appendChild(idBurnBtn);
+identitySection.appendChild(helpBtn);
 
-      <div id="toast-container"></div>
-      <div id="lightbox" class="lightbox"></div>
-    </div>
-  `;
+headerRowPrimary.appendChild(titleGroup);
+headerRowPrimary.appendChild(identitySection);
 
-const discoveredCountSpan = document.getElementById('discovered-count')!;
-const lightbox = document.getElementById('lightbox')!;
-const debugContainer = document.getElementById('debug-container')!;
-const debugToggle = document.getElementById('debug-toggle')!;
+const headerRowSecondary = document.createElement('div');
+headerRowSecondary.className = 'header-row-secondary';
 
-debugToggle.onclick = () => debugContainer.classList.toggle('collapsed');
+const statsGroup = document.createElement('div');
+statsGroup.className = 'stats-group';
+const bufferIndicator = document.createElement('div');
+bufferIndicator.id = 'buffer-indicator';
+bufferIndicator.className = 'buffer-indicator';
+const pendingSpan = document.createElement('span');
+pendingSpan.textContent = 'PENDING';
+const bufferCountSpan = document.createElement('span');
+bufferCountSpan.id = 'buffer-count';
+bufferCountSpan.className = 'buffer-count';
+bufferCountSpan.textContent = '0';
+bufferIndicator.appendChild(pendingSpan);
+bufferIndicator.appendChild(bufferCountSpan);
 
+const discoveredSpan = document.createElement('span');
+discoveredSpan.style.fontSize = '0.8em';
+discoveredSpan.style.opacity = '0.5';
+discoveredSpan.style.marginLeft = '10px';
+const discoveredCountSpan = document.createElement('span');
+discoveredCountSpan.id = 'discovered-count';
+discoveredCountSpan.textContent = '0';
+discoveredSpan.appendChild(discoveredCountSpan);
+discoveredSpan.appendChild(document.createTextNode(' Items'));
+statsGroup.appendChild(bufferIndicator);
+statsGroup.appendChild(discoveredSpan);
+
+const controlsGroup = document.createElement('div');
+controlsGroup.className = 'controls-group';
+const tickerControls = document.createElement('div');
+tickerControls.className = 'ticker-controls-compact';
+const tickerPauseBtn = document.createElement('button');
+tickerPauseBtn.id = 'ticker-pause';
+tickerPauseBtn.className = 'ticker-btn';
+tickerPauseBtn.textContent = 'Pause';
+const speedSlider = document.createElement('input');
+speedSlider.type = 'range';
+speedSlider.id = 'speed-slider';
+speedSlider.className = 'speed-slider';
+speedSlider.min = '500';
+speedSlider.max = '5000';
+speedSlider.step = '500';
+speedSlider.value = String(RENDER_INTERVAL_MS);
+speedSlider.title = 'Speed';
+const speedValueSpan = document.createElement('span');
+speedValueSpan.id = 'speed-value';
+speedValueSpan.style.fontSize = '0.8em';
+speedValueSpan.style.marginLeft = '8px';
+speedValueSpan.textContent = `${(RENDER_INTERVAL_MS / 1000).toFixed(1)}s`;
+tickerControls.appendChild(tickerPauseBtn);
+tickerControls.appendChild(speedSlider);
+tickerControls.appendChild(speedValueSpan);
+
+const broadcastSoulBtn = document.createElement('button');
+broadcastSoulBtn.id = 'broadcast-soul-btn';
+broadcastSoulBtn.className = 'broadcast-compact-btn';
+broadcastSoulBtn.textContent = '✨ Broadcast';
+
+controlsGroup.appendChild(tickerControls);
+controlsGroup.appendChild(broadcastSoulBtn);
+headerRowSecondary.appendChild(statsGroup);
+headerRowSecondary.appendChild(controlsGroup);
+
+glassPanel.appendChild(headerRowPrimary);
+glassPanel.appendChild(headerRowSecondary);
+
+const gallery = document.createElement('div');
+gallery.id = 'gallery';
+
+const debugContainer = document.createElement('div');
+debugContainer.id = 'debug-container';
+debugContainer.className = 'collapsed';
+const debugHeader = document.createElement('div');
+debugHeader.className = 'debug-header';
+debugHeader.id = 'debug-toggle';
+debugHeader.textContent = 'System Logs (Click to toggle)';
+const debugLog = document.createElement('div');
+debugLog.id = 'debug-log';
+debugContainer.appendChild(debugHeader);
+debugContainer.appendChild(debugLog);
+
+const toastContainer = document.createElement('div');
+toastContainer.id = 'toast-container';
+const lightbox = document.createElement('div');
+lightbox.id = 'lightbox';
+lightbox.className = 'lightbox';
+
+appContainer.appendChild(glassPanel);
+appContainer.appendChild(gallery);
+appContainer.appendChild(debugContainer);
+appContainer.appendChild(toastContainer);
+appContainer.appendChild(lightbox);
+app.appendChild(appContainer);
+
+// UI Event Listeners
+debugHeader.onclick = () => debugContainer.classList.toggle('collapsed');
 lightbox.onclick = () => {
   lightbox.style.display = 'none';
-  lightbox.innerHTML = '';
+  while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
 };
 
-function showToast(message: string, type: 'info' | 'warn' | 'error' | 'success' = 'info') {
-  const container = document.getElementById('toast-container')!;
-  const toast = document.createElement('div');
-  toast.className = `toast ${type} `;
-  toast.textContent = message;
-  container.appendChild(toast);
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    setTimeout(() => toast.remove(), 400);
-  }, 4000);
-}
-
-const myIdSpan = document.getElementById('my-id')!;
-const myIdIcon = document.getElementById('my-id-icon')!;
-const peerCountSpan = document.getElementById('peer-count')!;
-const gallery = document.getElementById('gallery')!;
-const debugLog = document.getElementById('debug-log')!;
-
-// Override Console Log
-function logToScreen(msg: string, color: string = '#0f0') {
-  const line = document.createElement('div');
-  line.style.color = color;
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg} `;
-  debugLog.appendChild(line);
-  debugLog.scrollTop = debugLog.scrollHeight;
-}
-
-const originalLog = console.log;
-const originalWarn = console.warn;
-const originalError = console.error;
-
-console.log = (...args) => {
-  originalLog(...args);
-  // Performance Fix: Disable screen logging for info level to prevent layout thrashing
-  // logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#0f0');
-};
-console.warn = (...args) => {
-  originalWarn(...args);
-  logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#ff0');
-};
-console.error = (...args) => {
-  originalError(...args);
-  logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#f00');
-};
-
-// --- Blacklist Logic ---
-const BLACKLIST_DB_NAME = 'moli_blacklist_db';
-const BLACKLIST_STORE = 'hashes';
-
-async function initBlacklist(): Promise<void> {
-  return new Promise((resolve) => {
-    const request = indexedDB.open(BLACKLIST_DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore(BLACKLIST_STORE);
-    };
-    request.onsuccess = async () => {
-      const db = request.result;
-      const tx = db.transaction(BLACKLIST_STORE, 'readonly');
-      const store = tx.objectStore(BLACKLIST_STORE);
-      const requestAll = store.getAllKeys();
-      requestAll.onsuccess = () => {
-        const hashes = requestAll.result as string[];
-        hashes.forEach(h => network.addToBlacklist(h));
-        console.log(`[Blacklist] Loaded ${hashes.length} persistent burn items.`);
-        resolve();
-      };
-    };
-    request.onerror = () => resolve();
-  });
-}
-
-// Vault Initialization & Loading
-async function initVaultAndLoad(): Promise<void> {
-  await Vault.init();
-  const pinnedItems = await Vault.loadAll();
-
-  if (pinnedItems.length > 0) {
-    console.log(`[Vault] Restoring ${pinnedItems.length} pinned souls...`);
-    for (const item of pinnedItems) {
-      // Check if already exists (e.g. from network or upload just now)
-      if (!imageStore.some(i => i.hash === item.hash)) {
-        await addImageToGallery(
-          item.blob,
-          true, // isLocal=true (We possess this)
-          undefined, // no remote peer
-          true, // isPinned=true (It's from the Vault)
-          item.name,
-        );
-      }
-    }
-  }
-}
-
-async function persistToBlacklist(hash: string): Promise<void> {
-  return new Promise((resolve) => {
-    const request = indexedDB.open(BLACKLIST_DB_NAME, 1);
-    request.onsuccess = () => {
-      const db = request.result;
-      const tx = db.transaction(BLACKLIST_STORE, 'readwrite');
-      const store = tx.objectStore(BLACKLIST_STORE);
-      store.put(true, hash);
-      tx.oncomplete = () => resolve();
-    };
-  });
-}
-
-function removeImageFromGallery(hash: string) {
-  const items = imageStore.filter(i => i.hash === hash);
-  items.forEach(item => {
-    const index = imageStore.findIndex(i => i.id === item.id);
-    if (index > -1) {
-      if (gallery.contains(item.element)) {
-        gallery.removeChild(item.element);
-      }
-      URL.revokeObjectURL(item.url);
-      imageStore.splice(index, 1);
-    }
-  });
-}
+// --- 2. Global State & Interfaces ---
 
 interface ImageItem {
   id: string;
@@ -217,21 +200,49 @@ interface ImageItem {
 
 const imageStore: ImageItem[] = [];
 const holderMap = new Map<string, Set<string>>(); // hash -> Set of peerIds
-const MAX_IMAGES = 50;
-// const IS_DEBUG_MATURATION = true;
-
 const renderQueue: ImageItem[] = [];
-// const dHashStore = new Set<string>(); // Removed: Aesthetic Filter
 
 let isPaused = false;
-let renderInterval = 2000;
+let renderInterval = RENDER_INTERVAL_MS;
 let tickerTimeout: ReturnType<typeof setTimeout> | null = null;
 
-const bufferIndicator = document.getElementById('buffer-indicator')!;
-const bufferCountSpan = document.getElementById('buffer-count')!;
-const tickerPauseBtn = document.getElementById('ticker-pause') as HTMLButtonElement;
-const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
-const speedValueSpan = document.getElementById('speed-value')!;
+// --- 3. Helper Functions ---
+
+function showToast(message: string, type: 'info' | 'warn' | 'error' | 'success' = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type} `;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 400);
+  }, TOAST_DURATION_MS);
+}
+
+function logToScreen(msg: string, color: string = '#0f0') {
+  const line = document.createElement('div');
+  line.style.color = color;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg} `;
+  debugLog.appendChild(line);
+  debugLog.scrollTop = debugLog.scrollHeight;
+}
+
+const originalLog = console.log;
+const originalWarn = console.warn;
+const originalError = console.error;
+
+console.log = (...args) => {
+  originalLog(...args);
+  // Info logs disabled on screen for performance
+};
+console.warn = (...args) => {
+  originalWarn(...args);
+  logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#ff0');
+};
+console.error = (...args) => {
+  originalError(...args);
+  logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#f00');
+};
 
 async function hashBlob(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
@@ -240,21 +251,16 @@ async function hashBlob(blob: Blob): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-
-
 async function checkImageHealth(blob: Blob): Promise<{ ok: boolean; reason?: string; }> {
   const url = URL.createObjectURL(blob);
   const img = new Image();
   img.src = url;
-
   return new Promise((resolve) => {
     img.onload = () => {
       URL.revokeObjectURL(url);
-      // Relaxed Filter: Allow any valid image > 0px (Pixel Art Support)
       if (img.width === 0 || img.height === 0) {
         return resolve({ ok: false, reason: "Invalid dimensions (0px)" });
       }
-
       resolve({ ok: true });
     };
     img.onerror = () => {
@@ -273,51 +279,49 @@ function getPeerColor(peerId: string): string {
   return `hsl(${h}, 70 %, 60 %)`;
 }
 
+// --- 4. Logic & Handlers ---
+
+const BLACKLIST_DB_NAME = 'moli_blacklist_db';
+const BLACKLIST_STORE = 'hashes';
+
+async function initBlacklist(): Promise<void> {
+  return new Promise((resolve) => {
+    const request = indexedDB.open(BLACKLIST_DB_NAME, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(BLACKLIST_STORE);
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction(BLACKLIST_STORE, 'readonly');
+      const store = tx.objectStore(BLACKLIST_STORE);
+      const requestAll = store.getAllKeys();
+      requestAll.onsuccess = () => {
+        const hashes = requestAll.result as string[];
+        hashes.forEach(h => network.addToBlacklist(h));
+        console.log(`[Blacklist] Loaded ${hashes.length} persistent burn items.`);
+        resolve();
+      };
+    };
+    request.onerror = () => resolve();
+  });
+}
+
+async function persistToBlacklist(hash: string): Promise<void> {
+  return new Promise((resolve) => {
+    const request = indexedDB.open(BLACKLIST_DB_NAME, 1);
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction(BLACKLIST_STORE, 'readwrite');
+      const store = tx.objectStore(BLACKLIST_STORE);
+      store.put(true, hash);
+      tx.oncomplete = () => resolve();
+    };
+  });
+}
+
 function updateBufferUI() {
   bufferCountSpan.textContent = renderQueue.length.toString();
-  if (renderQueue.length > 0) {
-    bufferIndicator.classList.add('visible');
-  } else {
-    bufferIndicator.classList.remove('visible');
-  }
+  if (renderQueue.length > 0) bufferIndicator.classList.add('visible');
+  else bufferIndicator.classList.remove('visible');
 }
-
-function processTicker() {
-  if (tickerTimeout) clearTimeout(tickerTimeout);
-
-  if (!isPaused && renderQueue.length > 0) {
-    const nextItem = renderQueue.shift()!;
-
-    // FIX: Check if item is still in imageStore before appending.
-    // If it was evicted while in queue, 'imageStore' won't contain it.
-    if (imageStore.some(i => i.id === nextItem.id)) {
-      gallery.appendChild(nextItem.element);
-      updateDecayUI();
-    } else {
-      console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
-      // Process next item immediately to avoid lag
-      tickerTimeout = setTimeout(processTicker, 0);
-      updateBufferUI(); // Ensure buffer count updates even if skipped
-      return;
-    }
-    updateBufferUI();
-  }
-
-  tickerTimeout = setTimeout(processTicker, renderInterval);
-}
-
-processTicker();
-
-tickerPauseBtn.onclick = () => {
-  isPaused = !isPaused;
-  tickerPauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
-  tickerPauseBtn.classList.toggle('active', isPaused);
-};
-
-speedSlider.oninput = () => {
-  renderInterval = parseInt(speedSlider.value);
-  speedValueSpan.textContent = `${(renderInterval / 1000).toFixed(1)} s`;
-};
 
 function updateDecayUI() {
   const sorted = [...imageStore].sort((a, b) => a.timestamp - b.timestamp);
@@ -326,17 +330,13 @@ function updateDecayUI() {
     item.element.classList.remove('decay-stage-1', 'decay-stage-2', 'decay-stage-3');
     if (item.isPinned) return;
     const ageIndex = sorted.indexOf(item);
-    const positionFromOldest = ageIndex;
-    const totalCount = total;
 
-    if (totalCount >= 7 && positionFromOldest === 0) {
-      if (totalCount === 7) item.element.classList.add('decay-stage-1');
-      else if (totalCount === 8) item.element.classList.add('decay-stage-2');
-      else if (totalCount >= 9) item.element.classList.add('decay-stage-3');
-    } else if (totalCount >= 8 && positionFromOldest === 1) {
-      if (totalCount === 8) item.element.classList.add('decay-stage-1');
-      else if (totalCount >= 9) item.element.classList.add('decay-stage-2');
-    } else if (totalCount >= 9 && positionFromOldest === 2) {
+    // Decay visual logic (roughly based on position among oldest)
+    if (total >= 7 && ageIndex === 0) {
+      item.element.classList.add(total >= 9 ? 'decay-stage-3' : total === 8 ? 'decay-stage-2' : 'decay-stage-1');
+    } else if (total >= 8 && ageIndex === 1) {
+      item.element.classList.add(total >= 9 ? 'decay-stage-2' : 'decay-stage-1');
+    } else if (total >= 9 && ageIndex === 2) {
       item.element.classList.add('decay-stage-1');
     }
   });
@@ -350,6 +350,7 @@ function updateHolderUI(hash: string) {
     item.holderBadge.textContent = `👤 ${count} `;
     item.holderBadge.style.display = 'block';
     item.holderBadge.style.background = count > 1 ? 'rgba(0, 200, 0, 0.8)' : 'rgba(0, 0, 0, 0.6)';
+
     let shadows = [];
     if (item.isPinned) {
       shadows.push('0 0 10px #ffd700');
@@ -357,6 +358,7 @@ function updateHolderUI(hash: string) {
     } else {
       item.element.style.borderColor = item.isLocal ? 'blue' : '#ccc';
     }
+
     if (count > 1) {
       const glowOpacity = Math.min(0.1 + (count * 0.05), 0.6);
       const blurRadius = item.isPinned ? 25 : 15;
@@ -370,238 +372,58 @@ function updateHolderUI(hash: string) {
   }
 }
 
-async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: string, isPinned: boolean = false, name?: string) {
-  const hash = await hashBlob(blob);
+function processTicker() {
+  if (tickerTimeout) clearTimeout(tickerTimeout);
 
-  // 0. Guard: Blacklist Check
-  if (network.isBlacklisted(hash)) {
-    console.warn(`[Guard] Blocked blacklisted content: ${hash} `);
-    if (remotePeerId) releaseDownloadSlot();
-    return;
-  }
+  if (!isPaused && renderQueue.length > 0) {
+    const nextItem = renderQueue.shift()!;
 
-  if (remotePeerId) {
-    if (!holderMap.has(hash)) holderMap.set(hash, new Set());
-    holderMap.get(hash)!.add(remotePeerId);
-  }
-
-  const existing = imageStore.find(i => i.hash === hash);
-  if (existing) {
-    if (name && !existing.caption) existing.caption = name;
-    if (isPinned && !existing.isPinned) {
-      console.log(`[Bridge] Image ${hash.substring(0, 8)} promoted to Pinned by ${remotePeerId} `);
-      existing.isPinned = true;
-      updateHolderUI(hash);
-
+    // FIX: Check if item is still in imageStore before appending.
+    if (imageStore.some(i => i.id === nextItem.id)) {
+      gallery.appendChild(nextItem.element);
+      updateDecayUI();
     } else {
-      console.log(`Deduplicated image: ${hash.substring(0, 8)} `);
-    }
-    updateHolderUI(hash);
-    if (remotePeerId) releaseDownloadSlot();
-    return;
-  }
-
-  const health = await checkImageHealth(blob);
-  if (!health.ok) {
-    console.warn(`[Gatekeeper] REJECTED: ${health.reason} `);
-    if (isLocal) showToast(`Rejected: ${health.reason} `, 'warn');
-    if (remotePeerId) releaseDownloadSlot();
-    return;
-  }
-
-
-
-  const id = Math.random().toString(36).substring(2, 11);
-  const url = URL.createObjectURL(blob);
-  const timestamp = Date.now();
-
-  const container = document.createElement('div');
-  container.className = 'gallery-item';
-  const img = document.createElement('img');
-  img.src = url;
-
-  // Smart Pixelation: Use pixelated rendering ONLY for small images (likely pixel art)
-  // This prevents blurring on pixel art, while keeping high-res photos smooth (avoiding aliasing).
-  img.onload = () => {
-    if (img.naturalWidth < 128 || img.naturalHeight < 128) {
-      img.style.imageRendering = 'pixelated';
-    }
-  };
-
-  // Safety by Default: Apply blur initially (unless Pinned locally)
-  // Pinning implies "I checked this and want to keep it", so we trust pinned items.
-  if (!isPinned) {
-    img.classList.add('blurred');
-    img.title = "Safety Filter: Click to Reveal";
-  }
-
-  // Click to Reveal OR Open Lightbox
-  container.onclick = (e) => {
-    e.stopPropagation();
-
-    // If blurred, first click just unblurs (Safety Reveal)
-    if (img.classList.contains('blurred')) {
-      img.classList.remove('blurred');
-      img.title = ""; // Remove tooltip
+      console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
+      tickerTimeout = setTimeout(processTicker, 0);
+      updateBufferUI();
       return;
     }
+    updateBufferUI();
+  }
 
-    // Normal behavior: Open Lightbox
-    lightbox.style.display = 'flex';
-    lightbox.innerHTML = '';
-    const lbImg = document.createElement('img');
-    lbImg.src = url;
-    lightbox.appendChild(lbImg);
-  };
-
-  const windmill = document.createElement('div');
-  windmill.className = 'windmill-static';
-
-  // Receipt Verification (New in v1.2)
-  // function verifyGatewaySignature removed
-  // The windmill will always be static now, as there's no verification.
-  windmill.innerHTML = `
-  <svg viewBox="0 0 100 100" width="32" height="32" style="width: 32px; height: 32px;">
-    <path d="M48 95 L52 95 L52 50 L48 50 Z" fill="rgba(255,255,255,0.2)" />
-    <g>
-      <path d="M50 50 L50 10 L65 10 L65 45 Z" fill="currentColor" />
-      <path d="M50 50 L90 50 L90 65 L55 65 Z" fill="currentColor" />
-      <path d="M50 50 L50 90 L35 90 L35 55 Z" fill="currentColor" />
-      <path d="M50 50 L10 50 L10 35 L45 35 Z" fill="currentColor" />
-    </g>
-    <circle cx="50" cy="50" r="5" fill="currentColor" />
-  </svg>
-  `;
-
-  const overlay = document.createElement('div');
-  overlay.className = 'card-overlay';
-
-  const label = document.createElement('div');
-  label.style.fontSize = '12px';
-  label.style.marginBottom = '5px';
-  label.textContent = isLocal ? 'Original Soul' : 'Shared Soul';
-
-  const actionRow = document.createElement('div');
-  actionRow.className = 'action-row';
-
-  const holderBadge = document.createElement('div');
-  holderBadge.className = 'holder-badge';
-  holderBadge.style.display = 'none';
-
-  const pinBtn = document.createElement('button');
-  pinBtn.className = 'pin-btn';
-  pinBtn.textContent = 'Pin';
-  pinBtn.onclick = (e) => {
-    e.stopPropagation();
-    const item = imageStore.find(i => i.id === id);
-    if (item) {
-      item.isPinned = !item.isPinned;
-      pinBtn.textContent = item.isPinned ? 'Unpin' : 'Pin';
-      pinBtn.classList.toggle('pinned', item.isPinned);
-
-      // Vault Persistence
-      if (item.isPinned) {
-        fetch(item.url).then(r => r.blob()).then(blob => {
-          const receiptRaw = localStorage.getItem(`moli_receipt_${item.hash} `);
-          const receipt = receiptRaw ? JSON.parse(receiptRaw) : undefined; // Receipt might already be on item object if loaded from vault, but let's check LS too or pass existing.
-          // Actually, verifyReceipt logic puts it in LS. Let's use that or what we have.
-          Vault.save({
-            hash: item.hash,
-            blob,
-            name: item.caption || 'Soul',
-            size: blob.size,
-            mime: blob.type,
-            timestamp: item.timestamp,
-            receipt: receipt
-          });
-        });
-      } else {
-        Vault.remove(item.hash);
-      }
-
-      updateHolderUI(hash);
-      // Re-broadcast with Pinned status and Tribute Receipt
-      fetch(item.url).then(r => r.blob()).then(blob => {
-        network.broadcastImage(blob, item.hash, item.isPinned, item.caption);
-      });
-    }
-  };
-
-  // Sovereign Guard: Principle of Deregulation v1.7
-  // - ID Reset: Immediately nukes everything.
-  // - Content Burn: Immediately allowed (no maturation wait).
-
-  // 1. Content Burn (Card Overlay)
-  const burnActionBtn = document.createElement('button');
-  burnActionBtn.className = 'burn-action-btn';
-  burnActionBtn.textContent = '🔥 Burn';
-  burnActionBtn.title = 'Signal malicious content (Global)';
-  burnActionBtn.onclick = async (e) => {
-    e.stopPropagation();
-    // V1.7 Deregulation: Maturation check removed.
-    // Every Sovereign Soul has the right to defend the realm immediately.
-
-    if (confirm('CONFIRMATION: Are you sure you want to BURN this soul? This action broadcasts a block signal to the mesh and cannot be undone.')) {
-      await network.broadcastBurn(hash);
-      await persistToBlacklist(hash);
-      removeImageFromGallery(hash);
-      Vault.remove(hash);
-      showToast("Content burned and signaled.", "success");
-    }
-  };
-
-  const removeActionBtn = document.createElement('button');
-  removeActionBtn.className = 'remove-action-btn';
-  removeActionBtn.textContent = '🗑️'; // Icon only for space
-  removeActionBtn.title = 'Remove local copy only (No broadcast)';
-  removeActionBtn.style.marginLeft = '4px';
-  removeActionBtn.style.padding = '2px 6px';
-  removeActionBtn.style.fontSize = '0.8rem';
-  removeActionBtn.style.background = 'rgba(255, 255, 255, 0.1)';
-  removeActionBtn.style.border = 'none';
-  removeActionBtn.style.borderRadius = '4px';
-  removeActionBtn.style.cursor = 'pointer';
-  removeActionBtn.style.color = '#fff';
-
-  removeActionBtn.onclick = (e) => {
-    e.stopPropagation();
-    if (confirm('Remove this image from your local view?')) {
-      removeImageFromGallery(hash);
-      Vault.remove(hash);
-      showToast("Image removed locally.", "success");
-    }
-  };
-
-  overlay.appendChild(label);
-  overlay.appendChild(actionRow);
-  actionRow.appendChild(holderBadge);
-  actionRow.appendChild(pinBtn);
-  actionRow.appendChild(burnActionBtn);
-  actionRow.appendChild(removeActionBtn);
-
-
-
-  container.appendChild(img);
-  container.appendChild(windmill);
-  container.appendChild(overlay);
-
-  const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, holderBadge, caption: name };
-  imageStore.push(newItem);
-
-  renderQueue.push(newItem);
-  updateBufferUI();
-  updateHolderUI(hash);
-  checkEviction();
-  shareInventory();
-
-  if (remotePeerId) releaseDownloadSlot();
-
-
+  tickerTimeout = setTimeout(processTicker, renderInterval);
 }
 
+function checkEviction() {
+  if (imageStore.length <= MAX_GALLERY_ITEMS) return;
+  const unpinned = imageStore.filter(i => !i.isPinned).sort((a, b) => a.timestamp - b.timestamp);
+  if (unpinned.length > 0) {
+    const toRemove = unpinned[0];
+    const index = imageStore.findIndex(i => i.id === toRemove.id);
+    if (index > -1) {
+      if (gallery.contains(toRemove.element)) gallery.removeChild(toRemove.element);
+      URL.revokeObjectURL(toRemove.url);
+      imageStore.splice(index, 1);
+      if (imageStore.length > MAX_GALLERY_ITEMS) checkEviction();
+    }
+  }
+}
 
+function removeImageFromGallery(hash: string) {
+  const items = imageStore.filter(i => i.hash === hash);
+  items.forEach(item => {
+    const index = imageStore.findIndex(i => i.id === item.id);
+    if (index > -1) {
+      if (gallery.contains(item.element)) {
+        gallery.removeChild(item.element);
+      }
+      URL.revokeObjectURL(item.url);
+      imageStore.splice(index, 1);
+    }
+  });
+}
 
-
+// 5. Network Logic
 
 const MAX_CONCURRENT_DOWNLOADS = 3;
 let activeDownloadCount = 0;
@@ -629,20 +451,253 @@ function shareInventory() {
   });
 }
 
-function checkEviction() {
-  if (imageStore.length <= MAX_IMAGES) return;
-  const unpinned = imageStore.filter(i => !i.isPinned).sort((a, b) => a.timestamp - b.timestamp);
-  if (unpinned.length > 0) {
-    const toRemove = unpinned[0];
-    const index = imageStore.findIndex(i => i.id === toRemove.id);
-    if (index > -1) {
-      if (gallery.contains(toRemove.element)) gallery.removeChild(toRemove.element);
-      URL.revokeObjectURL(toRemove.url);
-      imageStore.splice(index, 1);
-      if (imageStore.length > MAX_IMAGES) checkEviction();
+// --- CORE: Add Image to Gallery (Refactored) ---
+async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: string, isPinned: boolean = false, name?: string) {
+  const hash = await hashBlob(blob);
+
+  // 0. Guard: Blacklist Check
+  if (network.isBlacklisted(hash)) {
+    console.warn(`[Guard] Blocked blacklisted content: ${hash} `);
+    if (remotePeerId) releaseDownloadSlot();
+    return;
+  }
+
+  if (remotePeerId) {
+    if (!holderMap.has(hash)) holderMap.set(hash, new Set());
+    holderMap.get(hash)!.add(remotePeerId);
+  }
+
+  const existing = imageStore.find(i => i.hash === hash);
+  if (existing) {
+    if (name && !existing.caption) existing.caption = name;
+    if (isPinned && !existing.isPinned) {
+      console.log(`[Bridge] Image ${hash.substring(0, 8)} promoted to Pinned by ${remotePeerId} `);
+      existing.isPinned = true;
+      updateHolderUI(hash);
+    } else {
+      console.log(`Deduplicated image: ${hash.substring(0, 8)} `);
+    }
+    updateHolderUI(hash);
+    if (remotePeerId) releaseDownloadSlot();
+    return;
+  }
+
+  const health = await checkImageHealth(blob);
+  if (!health.ok) {
+    console.warn(`[Gatekeeper] REJECTED: ${health.reason} `);
+    if (isLocal) showToast(`Rejected: ${health.reason} `, 'warn');
+    if (remotePeerId) releaseDownloadSlot();
+    return;
+  }
+
+  const id = Math.random().toString(36).substring(2, 11);
+  const url = URL.createObjectURL(blob);
+  const timestamp = Date.now();
+
+  const container = document.createElement('div');
+  container.className = 'gallery-item';
+  const img = document.createElement('img');
+  img.src = url;
+
+  img.onload = () => {
+    if (img.naturalWidth < 128 || img.naturalHeight < 128) {
+      img.style.imageRendering = 'pixelated';
+    }
+  };
+
+  if (!isPinned) {
+    img.classList.add('blurred');
+    img.title = "Safety Filter: Click to Reveal";
+  }
+
+  container.onclick = (e) => {
+    e.stopPropagation();
+    if (img.classList.contains('blurred')) {
+      img.classList.remove('blurred');
+      img.title = "";
+      return;
+    }
+    lightbox.style.display = 'flex';
+    while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+    const lbImg = document.createElement('img');
+    lbImg.src = url;
+    lightbox.appendChild(lbImg);
+  };
+
+  const windmill = document.createElement('div');
+  windmill.className = 'windmill-static';
+  // SVG is static content, safer to use innerHTML than construct paths manually
+  windmill.innerHTML = `
+    <svg viewBox="0 0 100 100" width="32" height="32" style="width: 32px; height: 32px;">
+      <path d="M48 95 L52 95 L52 50 L48 50 Z" fill="rgba(255,255,255,0.2)" />
+      <g>
+        <path d="M50 50 L50 10 L65 10 L65 45 Z" fill="currentColor" />
+        <path d="M50 50 L90 50 L90 65 L55 65 Z" fill="currentColor" />
+        <path d="M50 50 L50 90 L35 90 L35 55 Z" fill="currentColor" />
+        <path d="M50 50 L10 50 L10 35 L45 35 Z" fill="currentColor" />
+      </g>
+      <circle cx="50" cy="50" r="5" fill="currentColor" />
+    </svg>
+    `;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'card-overlay';
+
+  const label = document.createElement('div');
+  label.style.fontSize = '12px';
+  label.style.marginBottom = '5px';
+  label.textContent = isLocal ? 'Original Soul' : 'Shared Soul';
+
+  const actionRow = document.createElement('div');
+  actionRow.className = 'action-row';
+
+  const holderBadge = document.createElement('div');
+  holderBadge.className = 'holder-badge';
+  holderBadge.style.display = 'none';
+
+  const pinBtn = document.createElement('button');
+  pinBtn.className = 'pin-btn';
+  pinBtn.textContent = 'Pin';
+  pinBtn.onclick = (e) => {
+    e.stopPropagation();
+    const item = imageStore.find(i => i.id === id);
+    if (item) {
+      item.isPinned = !item.isPinned;
+      pinBtn.textContent = item.isPinned ? 'Unpin' : 'Pin';
+      pinBtn.classList.toggle('pinned', item.isPinned);
+
+      if (item.isPinned) {
+        fetch(item.url).then(r => r.blob()).then(blob => {
+          const receiptRaw = localStorage.getItem(`moli_receipt_${item.hash} `);
+          const receipt = receiptRaw ? JSON.parse(receiptRaw) : undefined;
+          Vault.save({
+            hash: item.hash,
+            blob,
+            name: item.caption || 'Soul',
+            size: blob.size,
+            mime: blob.type,
+            timestamp: item.timestamp,
+            receipt: receipt
+          });
+        });
+      } else {
+        Vault.remove(item.hash);
+      }
+
+      updateHolderUI(hash);
+      fetch(item.url).then(r => r.blob()).then(blob => {
+        network.broadcastImage(blob, item.hash, item.isPinned, item.caption);
+      });
+    }
+  };
+
+  const burnActionBtn = document.createElement('button');
+  burnActionBtn.className = 'burn-action-btn';
+  burnActionBtn.textContent = '🔥 Burn';
+  burnActionBtn.title = 'Signal malicious content (Global)';
+  burnActionBtn.onclick = async (e) => {
+    e.stopPropagation();
+    if (confirm('CONFIRMATION: Are you sure you want to BURN this soul? This action broadcasts a block signal to the mesh and cannot be undone.')) {
+      await network.broadcastBurn(hash);
+      await persistToBlacklist(hash);
+      removeImageFromGallery(hash);
+      Vault.remove(hash);
+      showToast("Content burned and signaled.", "success");
+    }
+  };
+
+  const removeActionBtn = document.createElement('button');
+  removeActionBtn.className = 'remove-action-btn';
+  removeActionBtn.textContent = '🗑️';
+  removeActionBtn.title = 'Remove local copy only (No broadcast)';
+  removeActionBtn.style.marginLeft = '4px';
+  removeActionBtn.style.padding = '2px 6px';
+  removeActionBtn.style.fontSize = '0.8rem';
+  removeActionBtn.style.background = 'rgba(255, 255, 255, 0.1)';
+  removeActionBtn.style.border = 'none';
+  removeActionBtn.style.borderRadius = '4px';
+  removeActionBtn.style.cursor = 'pointer';
+  removeActionBtn.style.color = '#fff';
+
+  removeActionBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (confirm('Remove this image from your local view?')) {
+      removeImageFromGallery(hash);
+      Vault.remove(hash);
+      showToast("Image removed locally.", "success");
+    }
+  };
+
+  overlay.appendChild(label);
+  overlay.appendChild(actionRow);
+  actionRow.appendChild(holderBadge);
+  actionRow.appendChild(pinBtn);
+  actionRow.appendChild(burnActionBtn);
+  actionRow.appendChild(removeActionBtn);
+
+  container.appendChild(img);
+  container.appendChild(windmill);
+  container.appendChild(overlay);
+
+  const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, holderBadge, caption: name };
+  imageStore.push(newItem);
+
+  renderQueue.push(newItem);
+  updateBufferUI();
+  updateHolderUI(hash);
+  checkEviction();
+  shareInventory();
+
+  if (remotePeerId) releaseDownloadSlot();
+}
+
+async function initVaultAndLoad(): Promise<void> {
+  await Vault.init();
+  const pinnedItems = await Vault.loadAll();
+
+  if (pinnedItems.length > 0) {
+    console.log(`[Vault] Restoring ${pinnedItems.length} pinned souls...`);
+    for (const item of pinnedItems) {
+      if (!imageStore.some(i => i.hash === item.hash)) {
+        await addImageToGallery(
+          item.blob,
+          true,
+          undefined,
+          true,
+          item.name,
+        );
+      }
     }
   }
 }
+
+async function processLocalUpload(file: Blob, _name: string = 'image.png'): Promise<{ success: boolean; reason?: string }> {
+  const healthCheck = await checkImageHealth(file);
+  if (!healthCheck.ok) {
+    showToast(`Rejected: ${healthCheck.reason} `, 'warn');
+    return { success: false, reason: healthCheck.reason };
+  }
+  const hash = await hashBlob(file);
+
+  await Vault.save({
+    hash,
+    blob: file,
+    name: _name || 'Original Soul',
+    size: file.size,
+    mime: file.type,
+    timestamp: Date.now(),
+  }).then(() => {
+    console.log(`[Vault] Auto - pinned original upload: ${hash.slice(0, 8)} `);
+    addImageToGallery(file, true, undefined, true, _name);
+  });
+
+  shareInventory();
+  network.broadcastImage(file, hash, false, _name);
+  showToast("Broadcasted successfuly!", "success");
+  return { success: true };
+}
+
+// --- Identity & Network Initialization ---
 
 const network = new P2PNetwork(
   async (blob: Blob, peerId: string, _isPinned?: boolean, _publicKey?: string, name?: string) => {
@@ -667,11 +722,7 @@ const network = new P2PNetwork(
 );
 
 network.setBurnCallback(async (hash) => {
-  // Sovereign Immunity: We do NOT remove images based on external signals.
-  // We only show a toast that someone flagged it.
   console.log(`[Burn] Advisory Signal for ${hash}`);
-  // removeImageFromGallery(hash); // <--- DISABLED
-  // await persistToBlacklist(hash); // <--- DISABLED
   showToast("Peer Flagged Content (Advisory Only)", "info");
 });
 
@@ -688,83 +739,208 @@ network.setOfferFileCallback((session, data) => {
   processDownloadQueue();
 });
 
-// Infant Check Removed (V1.7 Deregulation)
-// const isInfant = () => ...
+// Event Handlers for UI (Tickers, Buttons)
+tickerPauseBtn.onclick = () => {
+  isPaused = !isPaused;
+  tickerPauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+  tickerPauseBtn.classList.toggle('active', isPaused);
+};
 
-async function processLocalUpload(file: Blob, _name: string = 'image.png'): Promise<{ success: boolean; reason?: string }> {
-  // 1. Infant Restrictions REMOVED (V1.7 Deregulation)
-  /*
-  if (isInfant()) {
-    ...
-  }
-  */
+speedSlider.oninput = () => {
+  renderInterval = parseInt(speedSlider.value);
+  speedValueSpan.textContent = `${(renderInterval / 1000).toFixed(1)} s`;
+};
 
-  // Normal Flow ...
-  const healthCheck = await checkImageHealth(file);
-  if (!healthCheck.ok) {
-    showToast(`Rejected: ${healthCheck.reason} `, 'warn');
-    return { success: false, reason: healthCheck.reason };
-  }
-  const hash = await hashBlob(file);
+// Listeners
+if (broadcastSoulBtn) broadcastSoulBtn.onclick = () => showUploadModal();
+if (helpBtn) helpBtn.onclick = showHelpModal;
+if (idBurnBtn) {
+  idBurnBtn.onclick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    lightbox.style.display = 'flex';
+    while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
 
-  // Auto-Self-Pin: User-uploaded content is precious "Original Soul"
-  // We automatically pin it to the Vault so it survives restarts.
-  await Vault.save({
-    hash,
-    blob: file, // Use the original file blob
-    name: _name || 'Original Soul',
-    size: file.size,
-    mime: file.type,
-    timestamp: Date.now(),
-  }).then(() => {
-    console.log(`[Vault] Auto - pinned original upload: ${hash.slice(0, 8)} `);
-    addImageToGallery(file, true, undefined, true, _name); // isPinned=true
-  });
+    const dangerModal = document.createElement('div');
+    dangerModal.className = 'danger-modal';
+    dangerModal.onclick = (ev) => ev.stopPropagation();
 
-  shareInventory();
-  network.broadcastImage(file, hash, false, _name);
-  showToast("Broadcasted successfuly!", "success");
-  return { success: true };
+    const icon = document.createElement('div');
+    icon.className = 'danger-icon';
+    icon.textContent = '🔥';
+
+    const h2 = document.createElement('h2');
+    h2.style.color = '#ff4444';
+    h2.style.margin = '0 0 10px 0';
+    h2.textContent = 'Sovereign Reset';
+
+    const p1 = document.createElement('p');
+    p1.style.opacity = '0.8';
+    p1.style.marginBottom = '5px';
+    p1.innerHTML = 'You are about to destroy your <strong>Identity</strong> and <strong>Vault</strong>.';
+
+    const p2 = document.createElement('p');
+    p2.style.fontSize = '0.85em';
+    p2.style.color = '#ff8888';
+    p2.style.marginTop = '0';
+    p2.textContent = 'This action cannot be undone.';
+
+    const actions = document.createElement('div');
+    actions.className = 'danger-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.id = 'cancel-burn';
+    cancelBtn.className = 'cancel-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = () => {
+      lightbox.style.display = 'none';
+      while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+    };
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.id = 'confirm-burn';
+    confirmBtn.className = 'destroy-btn';
+    confirmBtn.textContent = 'DESTROY';
+    confirmBtn.onclick = async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "BURNING...";
+
+      // 0. Close active connections
+      try {
+        Vault.close();
+      } catch (e) { console.error("Error closing DBs", e); }
+
+      // 1. Wipe Secrets from LocalStorage
+      localStorage.removeItem('moli_identity');
+      localStorage.removeItem('moli_last_upload');
+
+      // 2. Wipe IndexedDBs (Correct Names)
+      const dbs = ['moli_id_db', 'moli_vault_v1', 'moli_blacklist_db'];
+
+      for (const dbName of dbs) {
+        await new Promise<void>(resolve => {
+          const req = indexedDB.deleteDatabase(dbName);
+          req.onsuccess = () => { console.log(`Deleted ${dbName}`); resolve(); };
+          req.onerror = () => { console.warn(`Failed to delete ${dbName}`); resolve(); };
+          req.onblocked = () => { console.warn(`Blocked deleting ${dbName}`); resolve(); };
+        });
+      }
+      window.location.reload();
+    };
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    dangerModal.appendChild(icon);
+    dangerModal.appendChild(h2);
+    dangerModal.appendChild(p1);
+    dangerModal.appendChild(p2);
+    dangerModal.appendChild(actions);
+    lightbox.appendChild(dangerModal);
+  };
 }
 
-const broadcastSoulBtn = document.getElementById('broadcast-soul-btn') as HTMLButtonElement;
-broadcastSoulBtn.onclick = () => showUploadModal();
+(async () => {
+  try {
+    const initPromise = network.init();
+    // Use Constant
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Network Initialization Timed Out")), NETWORK_TIMEOUT_MS)
+    );
 
+    await Promise.race([initPromise, timeoutPromise]);
+
+    await initBlacklist();
+    await initVaultAndLoad();
+
+    myIdSpan.textContent = network.myId;
+    myIdSpan.title = `My Identity: ${network.myId} `;
+    myIdSpan.style.color = getPeerColor(network.myId);
+    myIdIcon.innerHTML = jdenticon.toSvg(network.myId, 20);
+    showToast(`Sovereign Soul Ready: ${network.myId.substring(0, 8)} `, 'success');
+  } catch (err: any) {
+    console.error("FATAL INITIALIZATION ERROR:", err);
+    showToast(`Startup Failed: ${err.message || err}. Try Burning Identity.`, 'error');
+  }
+})();
+
+// Start Ticker
+processTicker();
+
+// Modals
 async function showUploadModal() {
   lightbox.style.display = 'flex';
-  lightbox.innerHTML = `
-    <div class="upload-modal" onclick="event.stopPropagation()">
-      <h2 style="margin-top:0; background: linear-gradient(to right, #fff, #646cff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">Broadcast Your Soul</h2>
-      <div id="drop-zone" class="drop-zone">
-        <p>Drag & Drop Artwork or Click to Select</p>
-        <input type="file" id="modal-file-input" accept="image/*" style="display:none" />
-        <div id="upload-preview-container" style="display:none; text-align:center;">
-          <img id="upload-preview" class="upload-preview-img" />
-        </div>
-      </div>
-      <div class="modal-input-group">
-        <button id="broadcast-final-btn" class="broadcast-final-btn" disabled>Broadcast to Mesh</button>
-        <button id="cancel-modal-btn" class="cancel-modal-btn">Cancel</button>
-      </div>
-    </div>
-  `;
+  while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
 
-  const dropZone = document.getElementById('drop-zone')!;
-  const modalFileInput = document.getElementById('modal-file-input') as HTMLInputElement;
-  const previewContainer = document.getElementById('upload-preview-container')!;
-  const previewImg = document.getElementById('upload-preview') as HTMLImageElement;
-  const broadcastBtn = document.getElementById('broadcast-final-btn') as HTMLButtonElement;
-  const cancelBtn = document.getElementById('cancel-modal-btn') as HTMLButtonElement;
+  const modal = document.createElement('div');
+  modal.className = 'upload-modal';
+  modal.onclick = (e) => e.stopPropagation();
+
+  const h2 = document.createElement('h2');
+  h2.style.marginTop = '0';
+  h2.style.background = 'linear-gradient(to right, #fff, #646cff)';
+  h2.style.webkitBackgroundClip = 'text';
+  h2.style.backgroundClip = 'text';
+  (h2.style as any).webkitTextFillColor = 'transparent';
+  h2.textContent = 'Broadcast Your Soul';
+
+  const dropZone = document.createElement('div');
+  dropZone.id = 'drop-zone';
+  dropZone.className = 'drop-zone';
+
+  const pDrop = document.createElement('p');
+  pDrop.textContent = 'Drag & Drop Artwork or Click to Select';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.id = 'modal-file-input';
+  fileInput.accept = 'image/*';
+  fileInput.style.display = 'none';
+
+  const previewContainer = document.createElement('div');
+  previewContainer.id = 'upload-preview-container';
+  previewContainer.style.display = 'none';
+  previewContainer.style.textAlign = 'center';
+
+  const previewImg = document.createElement('img');
+  previewImg.id = 'upload-preview';
+  previewImg.className = 'upload-preview-img';
+
+  previewContainer.appendChild(previewImg);
+  dropZone.appendChild(pDrop);
+  dropZone.appendChild(fileInput);
+  dropZone.appendChild(previewContainer);
+
+  const inputGroup = document.createElement('div');
+  inputGroup.className = 'modal-input-group';
+
+  const broadcastBtn = document.createElement('button');
+  broadcastBtn.id = 'broadcast-final-btn';
+  broadcastBtn.className = 'broadcast-final-btn';
+  broadcastBtn.disabled = true;
+  broadcastBtn.textContent = 'Broadcast to Mesh';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.id = 'cancel-modal-btn';
+  cancelBtn.className = 'cancel-modal-btn';
+  cancelBtn.textContent = 'Cancel';
+
+  inputGroup.appendChild(broadcastBtn);
+  inputGroup.appendChild(cancelBtn);
+
+  modal.appendChild(h2);
+  modal.appendChild(dropZone);
+  modal.appendChild(inputGroup);
+
+  lightbox.appendChild(modal);
 
   let selectedFile: File | null = null;
-  // let currentManifest: any = null; // Unused
 
   cancelBtn.onclick = () => {
     lightbox.style.display = 'none';
-    lightbox.innerHTML = '';
+    while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
   };
 
-  dropZone.onclick = () => modalFileInput.click();
+  dropZone.onclick = () => fileInput.click();
   dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
   dropZone.ondragleave = () => dropZone.classList.remove('dragover');
   dropZone.ondrop = (e) => {
@@ -773,8 +949,8 @@ async function showUploadModal() {
     if (e.dataTransfer?.files[0]) handleFileSelection(e.dataTransfer.files[0]);
   };
 
-  modalFileInput.onchange = () => {
-    if (modalFileInput.files?.[0]) handleFileSelection(modalFileInput.files[0]);
+  fileInput.onchange = () => {
+    if (fileInput.files?.[0]) handleFileSelection(fileInput.files[0]);
   };
 
   function handleFileSelection(file: File) {
@@ -783,7 +959,7 @@ async function showUploadModal() {
     reader.onload = (e) => {
       previewImg.src = e.target?.result as string;
       previewContainer.style.display = 'block';
-      dropZone.style.display = 'none';
+      pDrop.style.display = 'none';
       validateForm();
     };
     reader.readAsDataURL(file);
@@ -802,12 +978,8 @@ async function showUploadModal() {
 
     if (result.success) {
       lightbox.style.display = 'none';
-      lightbox.innerHTML = '';
+      while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
       selectedFile = null;
-      dropZone.classList.remove('dragover');
-      dropZone.style.display = 'block';
-      previewContainer.style.display = 'none';
-      previewImg.src = '';
     } else {
       broadcastBtn.disabled = false;
       broadcastBtn.textContent = "Broadcast to Mesh";
@@ -815,136 +987,110 @@ async function showUploadModal() {
   };
 }
 
-// --- Startup Sequence Integrated at Bottom ---
-
-
 function showHelpModal() {
   lightbox.style.display = 'flex';
-  lightbox.innerHTML = `
-    <div class="help-modal" onclick="event.stopPropagation()">
-      <h2>Moli P2P Manual</h2>
-      <p style="opacity: 0.7; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
-        Welcome to the Autonomous Distributed Gallery. This is a ephemeral mesh network where content exists only as long as someone holds it.
-      </p>
+  while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
 
-      <div class="help-section">
-        <h3>🌱 Identity</h3>
-        <p>
-          You are a <strong>Sovereign Soul</strong>.
-          <br>
-          Your identity is generated locally and stored in your browser.
-        </p>
-      </div>
+  const helpModal = document.createElement('div');
+  helpModal.className = 'help-modal';
+  helpModal.onclick = (e) => e.stopPropagation();
 
-      <div class="help-section">
-        <h3>🎨 Actions</h3>
-        <p style="margin-bottom: 10px;"><strong>📌 Pin (Save)</strong><br>
-        Saves a copy of the soul (image) to your local Vault. Pinned items are automatically re-broadcasted when you rejoin the mesh.</p>
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Moli P2P Manual';
 
-        <p style="margin-bottom: 10px;"><strong>✨ Broadcast</strong><br>
-        Uploads a new soul to the mesh. It propagates to connected peers immediately.</p>
-      </div>
+  const pIntro = document.createElement('p');
+  pIntro.style.opacity = '0.7';
+  pIntro.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
+  pIntro.style.paddingBottom = '15px';
+  pIntro.textContent = 'Welcome to the Autonomous Distributed Gallery. This is a ephemeral mesh network where content exists only as long as someone holds it.';
 
-      <div class="help-section">
-        <h3>🛡️ Safety & Moderation</h3>
-        <p>
-          <strong>🔥 Burn Protocol:</strong>
-          If you encounter malicious content, you can <strong>Burn</strong> it (Global).
-        </p>
-        <p style="margin-top: 10px;">
-          <strong>🗑️ Remove (Local):</strong>
-          Use the trash icon to remove an item from your view without signaling the network.
-        </p>
-        <p style="margin-top: 10px; color: #ff8888;">
-          <strong>🔥 ID Reset:</strong>
-          Click the flame icon in the header to destroy your identity and start fresh.
-        </p>
-      </div>
+  const sectionIdentity = document.createElement('div');
+  sectionIdentity.className = 'help-section';
+  const h3Id = document.createElement('h3');
+  h3Id.textContent = '🌱 Identity';
+  const pId = document.createElement('p');
+  pId.appendChild(document.createTextNode('You are a '));
+  const strongSov = document.createElement('strong');
+  strongSov.textContent = 'Sovereign Soul';
+  pId.appendChild(strongSov);
+  pId.appendChild(document.createElement('br'));
+  pId.appendChild(document.createTextNode('Your identity is generated locally and stored in your browser.'));
+  sectionIdentity.appendChild(h3Id);
+  sectionIdentity.appendChild(pId);
 
-      <button id="close-help-btn" style="width: 100%; margin-top: 2rem;">Close Manual</button>
-    </div>
-  `;
+  const sectionActions = document.createElement('div');
+  sectionActions.className = 'help-section';
+  const h3Act = document.createElement('h3');
+  h3Act.textContent = '🎨 Actions';
+  const pPin = document.createElement('p');
+  pPin.style.marginBottom = '10px';
+  const strongPin = document.createElement('strong');
+  strongPin.textContent = '📌 Pin (Save)';
+  pPin.appendChild(strongPin);
+  pPin.appendChild(document.createElement('br'));
+  pPin.appendChild(document.createTextNode('Saves a copy of the soul (image) to your local Vault. Pinned items are automatically re-broadcasted when you rejoin the mesh.'));
 
-  document.getElementById('close-help-btn')!.onclick = () => {
+  const pBroad = document.createElement('p');
+  pBroad.style.marginBottom = '10px';
+  const strongBroad = document.createElement('strong');
+  strongBroad.textContent = '✨ Broadcast';
+  pBroad.appendChild(strongBroad);
+  pBroad.appendChild(document.createElement('br'));
+  pBroad.appendChild(document.createTextNode('Uploads a new soul to the mesh. It propagates to connected peers immediately.'));
+  sectionActions.appendChild(h3Act);
+  sectionActions.appendChild(pPin);
+  sectionActions.appendChild(pBroad);
+
+  const sectionSafe = document.createElement('div');
+  sectionSafe.className = 'help-section';
+  const h3Safe = document.createElement('h3');
+  h3Safe.textContent = '🛡️ Safety & Moderation';
+  const pBurn = document.createElement('p');
+  const strongBurn = document.createElement('strong');
+  strongBurn.textContent = '🔥 Burn Protocol:';
+  pBurn.appendChild(strongBurn);
+  pBurn.appendChild(document.createTextNode(' If you encounter malicious content, you can '));
+  const strongBurn2 = document.createElement('strong');
+  strongBurn2.textContent = 'Burn';
+  pBurn.appendChild(strongBurn2);
+  pBurn.appendChild(document.createTextNode(' it (Global).'));
+
+  const pRemove = document.createElement('p');
+  pRemove.style.marginTop = '10px';
+  const strongRemove = document.createElement('strong');
+  strongRemove.textContent = '🗑️ Remove (Local):';
+  pRemove.appendChild(strongRemove);
+  pRemove.appendChild(document.createTextNode(' Use the trash icon to remove an item from your view without signaling the network.'));
+
+  const pReset = document.createElement('p');
+  pReset.style.marginTop = '10px';
+  pReset.style.color = '#ff8888';
+  const strongReset = document.createElement('strong');
+  strongReset.textContent = '🔥 ID Reset:';
+  pReset.appendChild(strongReset);
+  pReset.appendChild(document.createTextNode(' Click the flame icon in the header to destroy your identity and start fresh.'));
+
+  sectionSafe.appendChild(h3Safe);
+  sectionSafe.appendChild(pBurn);
+  sectionSafe.appendChild(pRemove);
+  sectionSafe.appendChild(pReset);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.id = 'close-help-btn';
+  closeBtn.style.width = '100%';
+  closeBtn.style.marginTop = '2rem';
+  closeBtn.textContent = 'Close Manual';
+  closeBtn.onclick = () => {
     lightbox.style.display = 'none';
-    lightbox.innerHTML = '';
+    while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
   };
+
+  helpModal.appendChild(h2);
+  helpModal.appendChild(pIntro);
+  helpModal.appendChild(sectionIdentity);
+  helpModal.appendChild(sectionActions);
+  helpModal.appendChild(sectionSafe);
+  helpModal.appendChild(closeBtn);
+
+  lightbox.appendChild(helpModal);
 }
-
-const helpBtn = document.getElementById('help-btn') as HTMLButtonElement;
-if (helpBtn) helpBtn.onclick = showHelpModal;
-
-window.moliAPI = {
-  connect: () => ({ status: network.connectedPeerCount > 0 ? 'connected' : 'searching', id: network.myId }),
-  upload: async (blob: Blob, name?: string) => await processLocalUpload(blob, name),
-  getLatestImages: () => imageStore.map(i => ({ id: i.id, hash: i.hash, caption: i.caption, timestamp: i.timestamp })),
-  getPublicKey: () => network.identity.publicKeySpki ? btoa(String.fromCharCode(...new Uint8Array(network.identity.publicKeySpki))) : null,
-  getImageContent: async (hash: string) => {
-    const item = imageStore.find(i => i.hash === hash);
-    if (!item) return null;
-    const response = await fetch(item.url);
-    const blob = await response.blob();
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-      reader.readAsDataURL(blob);
-    });
-  }
-};
-
-
-// 2. ID Reset Button Logic
-const idBurnBtn = document.getElementById('id-burn-btn') as HTMLButtonElement;
-if (idBurnBtn) {
-  idBurnBtn.onclick = async () => {
-    if (confirm('DANGER: You are about to destroy your Identity and Vault.\n\nThis will wipe all pinned images and your reputation.\nAre you sure?')) {
-
-      // 1. Wipe Secrets from LocalStorage
-      localStorage.removeItem('moli_identity');
-      localStorage.removeItem('moli_last_upload');
-
-      // 2. Wipe IndexedDBs (Vault & Blacklist)
-      const dbs = ['moli_vault_db', 'moli_blacklist_db'];
-      for (const dbName of dbs) {
-        await new Promise<void>(resolve => {
-          const req = indexedDB.deleteDatabase(dbName);
-          req.onsuccess = () => resolve();
-          req.onerror = () => resolve();
-          req.onblocked = () => resolve();
-        });
-      }
-
-      // 3. Reload to regenerate
-      window.location.reload();
-    }
-  };
-}
-
-(async () => {
-  try {
-    // Timeout wrapper for initialization
-    const initPromise = network.init();
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Network Initialization Timed Out")), 15000)
-    );
-
-    await Promise.race([initPromise, timeoutPromise]);
-
-    await initBlacklist();
-    await initVaultAndLoad();
-
-    myIdSpan.textContent = network.myId;
-    myIdSpan.title = `My Identity: ${network.myId} `;
-    myIdSpan.style.color = getPeerColor(network.myId);
-    myIdIcon.innerHTML = jdenticon.toSvg(network.myId, 20);
-    showToast(`Sovereign Soul Ready: ${network.myId.substring(0, 8)} `, 'success');
-
-
-
-  } catch (err: any) {
-    console.error("FATAL INITIALIZATION ERROR:", err);
-
-    showToast(`Startup Failed: ${err.message || err}. Try Burning Identity.`, 'error');
-  }
-
-})();

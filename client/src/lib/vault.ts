@@ -111,4 +111,11 @@ export class Vault {
             getReq.onerror = () => reject(getReq.error);
         });
     }
+    static close(): void {
+        if (this.db) {
+            this.db.close();
+            this.db = null;
+            console.log('[Vault] Database connection closed.');
+        }
+    }
 }

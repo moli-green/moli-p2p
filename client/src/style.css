@@ -759,6 +759,81 @@ button:hover {
   animation: modal-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+.danger-modal {
+  background: rgba(20, 10, 10, 0.95);
+  backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  border-radius: 24px;
+  padding: 2.5rem;
+  max-width: 450px;
+  width: 90%;
+  box-shadow: 0 30px 100px rgba(100, 0, 0, 0.4);
+  text-align: center;
+  position: relative;
+  animation: shake-pop 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes shake-pop {
+  0% { transform: scale(0.9) translate(0, 0); opacity: 0; }
+  20% { transform: scale(1.02) translate(-2px, 0); opacity: 1; }
+  40% { transform: scale(1.02) translate(2px, 0); }
+  60% { transform: scale(1.02) translate(-1px, 0); }
+  80% { transform: scale(1.02) translate(1px, 0); }
+  100% { transform: scale(1) translate(0, 0); }
+}
+
+.danger-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  display: inline-block;
+  animation: flame-pulse 2s infinite;
+}
+
+@keyframes flame-pulse {
+  0% { filter: drop-shadow(0 0 5px rgba(255, 68, 68, 0.4)); transform: scale(1); }
+  50% { filter: drop-shadow(0 0 20px rgba(255, 68, 68, 0.8)); transform: scale(1.1); }
+  100% { filter: drop-shadow(0 0 5px rgba(255, 68, 68, 0.4)); transform: scale(1); }
+}
+
+.danger-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.cancel-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex: 1;
+}
+
+.cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.destroy-btn {
+  background: rgba(220, 20, 20, 0.8);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 68, 68, 0.5);
+  font-weight: 700;
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
+  flex: 1;
+}
+
+.destroy-btn:hover {
+  background: rgba(255, 40, 40, 1);
+  box-shadow: 0 0 40px rgba(255, 0, 0, 0.6);
+  transform: scale(1.05);
+}
+
 .drop-zone {
   border: 2px dashed rgba(100, 108, 255, 0.3);
   border-radius: 16px;

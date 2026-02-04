@@ -255,17 +255,9 @@ export class PeerSession {
                         return;
                     }
 
-                    // 2. Maturity Gate (Identity Age)
-                    const INFANT_AGE = 1 * 60 * 60 * 1000; // 1 hour
+                    // 2. Maturity Gate (Identity Age) - REMOVED (Deregulation v1.7.5)
                     const identityAge = msg.identityCreatedAt ? Date.now() - msg.identityCreatedAt : 0;
-                    const isInfant = identityAge < INFANT_AGE;
-                    const INFANT_SIZE_LIMIT = 1 * 1024 * 1024; // 1MB
 
-                    if (isInfant && msg.size > INFANT_SIZE_LIMIT) {
-                        console.warn(`[Guard] INFANT REJECT: ${this.peerId} (Age: ${Math.floor(identityAge / 60000)}m) tried to send ${msg.size} bytes. Limit is 1MB.`);
-                        this.currentMeta = null;
-                        return;
-                    }
 
                     // 3. Cryptographic Identity Check (v12.0)
                     if (msg.publicKey && msg.signature && msg.identityCreatedAt) {
@@ -322,13 +314,8 @@ export class PeerSession {
                     this.onSessionEvent?.('inventory', this, msg.hashes);
                 } else if (msg.type === 'burn') {
                     const burner = msg as BurnSignal;
-                    const MATURE_AGE = 24 * 60 * 60 * 1000; // 24 hours
-                    const burnerAge = Date.now() - burner.identityCreatedAt;
+                    // Deregulation v1.7.5: Immediate Defense (No Age Check)
 
-                    if (burnerAge < MATURE_AGE) {
-                        console.warn(`[Guard] Ignored BURN signal from immature ID: ${this.peerId} (Age: ${Math.floor(burnerAge / 3600000)}h)`);
-                        return;
-                    }
 
                     try {
                         const spki = Uint8Array.from(atob(burner.publicKey), c => c.charCodeAt(0)).buffer;

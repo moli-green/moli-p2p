@@ -17,11 +17,19 @@ echo ">>> Starting Moli P2P App Deployment (Phase 3: Fixed)..."
 echo ">>> Building Server..."
 if [ -d "$APP_DIR/server" ]; then
     cd "$APP_DIR/server"
-    source "$HOME/.cargo/env" || true
+    # Ensure Rust is installed
+    if ! command -v cargo &> /dev/null; then
+        echo ">>> Installing Rust..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source "$HOME/.cargo/env"
+    else
+        source "$HOME/.cargo/env" || true
+    fi
+    
     cargo build --release
     
     # Reload Service
-    sudo systemctl restart moli-server
+    sudo systemctl restart moli-p2p
 else
     echo "ERROR: Server directory not found at $APP_DIR/server"
     exit 1
@@ -43,12 +51,10 @@ if [ -d "$APP_DIR/client" ]; then
     # But only the last one? Or specific line.
     # The default one is preceded by "// Default (Google STUN only)"
     
-    sed -i "s|await network.init();|// await network.init();|g" "$TARGET"
+    # Replace "const initPromise = network.init();" with the production init
+    INJECT="const iceServers = [{ urls: 'turn:$DOMAIN:3478', username: '$TURN_USER', credential: '$TURN_PASS' }, { urls: 'stun:stun.l.google.com:19302' }]; const initPromise = network.init({ iceServers });"
     
-    # Inject the new init block replacing the comment header
-    INJECT="const iceServers = [{ urls: 'turn:$DOMAIN:3478', username: '$TURN_USER', credential: '$TURN_PASS' }, { urls: 'stun:stun.l.google.com:19302' }]; await network.init({ iceServers });"
-    
-    sed -i "s|// Default (Google STUN only)|$INJECT|" "$TARGET"
+    sed -i "s|const initPromise = network.init();|$INJECT|" "$TARGET"
 
     npm run build
 else
@@ -72,9 +78,9 @@ server {
     location /api/ws {
         proxy_pass http://localhost:9090/ws;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 }
 EOF

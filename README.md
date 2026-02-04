@@ -3,7 +3,12 @@
 > "Presence is Storage." - Use it or lose it. An autonomous, distributed image gallery that lives only as long as you watch it.
 
 ![Moli P2P Demo](./moli-p2p-hero.webp)
-*Live P2P Mesh Demo (v1.7 Sovereign Edition)*
+*Live P2P Mesh Demo (v1.7.5 Sovereign Edition - No Age Restrictions)*
+
+## v1.7.5 Sovereign Update
+- **No More Restrictions**: Abolished all age-based limits ("Infant" logic).
+- **Sovereign Reset**: New Glassmorphism-style "Danger Modal" for secure identity destruction.
+- **Immediate Defense**: Burning content is now available to all peers instantly.
 
 ## Philosophy
 
