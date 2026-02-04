@@ -1,0 +1,43 @@
+# System
+.DS_Store
+.vscode/
+.idea/
+
+# Rust (Server)
+/server/target/
+**/*.rs.bk
+
+# Node (Client & CLI & Gateway)
+/client/node_modules/
+/client/dist/
+/client/.env
+/client/*.local
+/cli/node_modules/
+/cli/*.png
+/gateway/node_modules/
+/gateway/dist/
+/gateway/.env
+/gateway/*.db
+/gateway/*.db-journal
+
+# General
+TODO.md
+*.log
+*.png
+!/client/public/*.png
+
+# --- Security Focus ---
+# SSH関連（ssh-bonsaiや生成された秘密鍵を絶対に含めない）
+ssh-bonsai/
+*.key
+*.pem
+id_*
+
+# 環境変数（どの階層にあっても無視するようにする）
+.env
+.env.*
+
+# --- Cleanup ---
+# 不要なGitの痕跡（マトリョーシカ防止）
+**/.git
+

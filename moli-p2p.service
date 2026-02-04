@@ -1,0 +1,14 @@
+[Unit]
+Description=Moli P2P v9.2 Server
+After=network.target
+
+[Service]
+Type=simple
+User=moli
+WorkingDirectory=/home/moli/moli-p2p/server_bin
+ExecStart=/home/moli/moli-p2p/server_bin/server
+Restart=always
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target

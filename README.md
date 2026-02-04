@@ -1,0 +1,42 @@
+# Moli P2P: Sovereign Ephemeral Gallery
+
+> "Presence is Storage." - Use it or lose it. An autonomous, distributed image gallery that lives only as long as you watch it.
+
+![Moli P2P](https://moli-green.is/moli-p2p-banner.png)
+
+## Philosophy
+
+Moli P2P is a rejection of central storage costs and "platform risk."
+- **Serverless-ish**: The server is a "dumb pipe" (Signal Relay). It stores nothing.
+- **Ephemeral**: Images exist only in the browser memory of active peers. If everyone closes the tab, the gallery vanishes.
+- **Sovereign**: No external AI APIs. No Google. No centralized moderation. Your computer is your castle.
+
+## Running Your Own Node (Docker)
+
+You can run a full Moli P2P node (Server + Client) on your own infrastructure (VPS, Raspberry Pi, Laptop) in seconds.
+
+### Prerequisites
+- Docker & Docker Compose
+
+### Quick Start
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/moli-green/moli-p2p.git
+cd moli-p2p
+
+# 2. Start the mesh
+docker compose up -d
+```
+
+That's it.
+- **Client**: `http://localhost` (or your server's IP)
+- **Signaling**: `http://localhost:9090` (Internal)
+
+## License
+
+**AGPLv3** (GNU Affero General Public License v3.0)
+
+This license ensures that if you run a modified version of this service accessible over a network, you must release the source code. This protects the project from being enclosed by proprietary cloud services.
+
+See [LICENSE](./LICENSE) for details.

@@ -1,0 +1,18 @@
+services:
+  server:
+    build: ./server
+    container_name: moli-server
+    restart: always
+    ports:
+      - "9090:9090"
+    environment:
+      - RUST_LOG=info
+
+  client:
+    build: ./client
+    container_name: moli-client
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - server
