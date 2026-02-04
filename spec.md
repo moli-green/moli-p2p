@@ -535,3 +535,18 @@ To maximize maintainability and focus on the core "Human-to-Human" experience, w
 -   **Containerization**: Full Docker support for Server (Rust) and Client (Nginx).
 -   **One-Click Run**: `docker compose up` is now the standard deployment method.
 
+## 17. v1.7.5 Final Sovereign Release (2026-02-05)
+
+### A. Burn Protocol Deregulation
+-   **Abolished**: The "Identity Maturation" check (24-hour wait) for issuing Burn signals has been removed.
+-   **Philosophy**: "Immediate Defense". Every Sovereign Soul, regardless of age, has the right to signal rejection of malicious content.
+
+### B. "Scorched Earth" ID Reset
+-   **Fix**: The header "Flame" button now correctly triggers a full local wipe.
+-   **Scope**: Deletes `moli_identity` (LocalStorage), `moli_vault_db` (IndexDB), and `moli_blacklist_db` (IndexDB) before forcing a page reload.
+
+### C. Visual & Stability Polish
+-   **Startup Stability**: Fixed "Startup Error" red banners caused by missing DOM elements during initialization.
+-   **Smart Pixelation**: Added logic to apply `image-rendering: pixelated` *only* to small images (<128px), ensuring Pixel Art looks crisp while Photos remain smooth.
+-   **Aesthetic Hero**: Updated documentation with a generative-art hero video.
+
