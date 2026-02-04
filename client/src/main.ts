@@ -52,6 +52,7 @@ app.innerHTML = `
           <div class="ticker-controls-compact">
             <button id="ticker-pause" class="ticker-btn">Pause</button>
             <input type="range" id="speed-slider" class="speed-slider" min="500" max="5000" step="500" value="2000" title="Speed" />
+            <span id="speed-value" style="font-size: 0.8em; margin-left: 8px;">2.0s</span>
           </div>
           <button id="broadcast-soul-btn" class="broadcast-compact-btn">✨ Broadcast</button>
         </div>
@@ -514,17 +515,20 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
     }
   };
 
+  // Sovereign Guard: Principle of Deregulation v1.7
+  // - ID Reset: Immediately nukes everything.
+  // - Content Burn: Immediately allowed (no maturation wait).
+
+  // 1. Content Burn (Card Overlay)
   const burnActionBtn = document.createElement('button');
   burnActionBtn.className = 'burn-action-btn';
   burnActionBtn.textContent = '🔥 Burn';
-  burnActionBtn.title = 'Signal malicious content (requires 24h ID age)';
+  burnActionBtn.title = 'Signal malicious content (Global)';
   burnActionBtn.onclick = async (e) => {
     e.stopPropagation();
-    const MATURE_AGE = 24 * 60 * 60 * 1000; // Production: 24 hours
-    if (Date.now() - network.identity.createdAt < MATURE_AGE) {
-      showToast("Identity too infant to burn mesh content (Needs 24h)", "warn");
-      return;
-    }
+    // V1.7 Deregulation: Maturation check removed.
+    // Every Sovereign Soul has the right to defend the realm immediately.
+
     if (confirm('CONFIRMATION: Are you sure you want to BURN this soul? This action broadcasts a block signal to the mesh and cannot be undone.')) {
       await network.broadcastBurn(hash);
       await persistToBlacklist(hash);
@@ -672,27 +676,16 @@ network.setOfferFileCallback((session, data) => {
   processDownloadQueue();
 });
 
-// Infant Check Helper
-const isInfant = () => (Date.now() - network.identity.createdAt) < (0);
+// Infant Check Removed (V1.7 Deregulation)
+// const isInfant = () => ...
 
 async function processLocalUpload(file: Blob, _name: string = 'image.png'): Promise<{ success: boolean; reason?: string }> {
-  // 1. Infant Restrictions
+  // 1. Infant Restrictions REMOVED (V1.7 Deregulation)
+  /*
   if (isInfant()) {
-    const LAST_UPLOAD_KEY = 'moli_last_upload';
-    const now = Date.now();
-    const lastUpload = parseInt(localStorage.getItem(LAST_UPLOAD_KEY) || '0');
-
-    // A. Rate Limit (10 mins)
-    if (now - lastUpload < 10 * 60 * 1000) {
-      const wait = Math.ceil((10 * 60 * 1000 - (now - lastUpload)) / 60000);
-      showToast(`Infant Identity Rate Limit: Please wait ${wait} mins.`, 'warn');
-      return { success: false, reason: "Rate Limit" };
-    }
-
-
-
-    localStorage.setItem(LAST_UPLOAD_KEY, now.toString());
+    ...
   }
+  */
 
   // Normal Flow ...
   const healthCheck = await checkImageHealth(file);
@@ -810,16 +803,7 @@ async function showUploadModal() {
   };
 }
 
-// --- Startup Sequence ---
-(async () => {
-  try {
-    await initBlacklist();
-    await initVaultAndLoad();
-  } catch (err: any) {
-    console.error("Startup Warning:", err);
-    showToast(`Startup Partial: ${err.message || err}`, 'warn');
-  }
-})();
+// --- Startup Sequence Integrated at Bottom ---
 
 
 function showHelpModal() {
@@ -832,13 +816,11 @@ function showHelpModal() {
       </p>
 
       <div class="help-section">
-        <h3>🌱 Identity & Maturation</h3>
+        <h3>🌱 Identity</h3>
         <p>
-          New identities start as <strong>Infant</strong>. To prevent spam, infants have restricted capabilities (rate limits, no burning).
-          <br><br>
-          <strong>Maturation Time:</strong> 24 Hours.
+          You are a <strong>Sovereign Soul</strong>.
           <br>
-          Once mature, you become a <strong>Sovereign Soul</strong> with full rights to Burn content.
+          Your identity is generated locally and stored in your browser.
         </p>
       </div>
 
@@ -855,13 +837,15 @@ function showHelpModal() {
         <h3>🛡️ Safety & Moderation</h3>
         <p>
           <strong>🔥 Burn Protocol:</strong>
-          If you encounter malicious content, you can <strong>Burn</strong> it. This broadcasts a block signal to the mesh.
-          <br>
-          <em>(Requires Sovereign Identity)</em>
+          If you encounter malicious content, you can <strong>Burn</strong> it (Global).
         </p>
         <p style="margin-top: 10px;">
           <strong>🗑️ Remove (Local):</strong>
           Use the trash icon to remove an item from your view without signaling the network.
+        </p>
+        <p style="margin-top: 10px; color: #ff8888;">
+          <strong>🔥 ID Reset:</strong>
+          Click the flame icon in the header to destroy your identity and start fresh.
         </p>
       </div>
 
@@ -897,18 +881,29 @@ window.moliAPI = {
 };
 
 
-// Immediate fail-safe listener for Burn Button (works even if init hangs)
+// 2. ID Reset Button Logic
 const idBurnBtn = document.getElementById('id-burn-btn') as HTMLButtonElement;
 if (idBurnBtn) {
-  idBurnBtn.onclick = () => {
-    if (confirm('DANGER: You are about to destroy your Identity and Reputation. This cannot be undone.\n\nAre you sure you want to proceed?')) {
-      // Direct DB deletion attempt relative to window context if network object is stuck
-      const DB_NAME = 'moli_id_db';
-      const req = indexedDB.deleteDatabase(DB_NAME);
-      req.onsuccess = () => window.location.reload();
-      req.onerror = () => window.location.reload();
-      // Also try the class method if available
-      try { network.identity.burn(); } catch (e) { }
+  idBurnBtn.onclick = async () => {
+    if (confirm('DANGER: You are about to destroy your Identity and Vault.\n\nThis will wipe all pinned images and your reputation.\nAre you sure?')) {
+
+      // 1. Wipe Secrets from LocalStorage
+      localStorage.removeItem('moli_identity');
+      localStorage.removeItem('moli_last_upload');
+
+      // 2. Wipe IndexedDBs (Vault & Blacklist)
+      const dbs = ['moli_vault_db', 'moli_blacklist_db'];
+      for (const dbName of dbs) {
+        await new Promise<void>(resolve => {
+          const req = indexedDB.deleteDatabase(dbName);
+          req.onsuccess = () => resolve();
+          req.onerror = () => resolve();
+          req.onblocked = () => resolve();
+        });
+      }
+
+      // 3. Reload to regenerate
+      window.location.reload();
     }
   };
 }
