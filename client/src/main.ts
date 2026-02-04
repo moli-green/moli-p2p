@@ -116,7 +116,8 @@ const originalError = console.error;
 
 console.log = (...args) => {
   originalLog(...args);
-  logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#0f0');
+  // Performance Fix: Disable screen logging for info level to prevent layout thrashing
+  // logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#0f0');
 };
 console.warn = (...args) => {
   originalWarn(...args);
@@ -286,9 +287,20 @@ function processTicker() {
 
   if (!isPaused && renderQueue.length > 0) {
     const nextItem = renderQueue.shift()!;
-    gallery.appendChild(nextItem.element);
+
+    // FIX: Check if item is still in imageStore before appending.
+    // If it was evicted while in queue, 'imageStore' won't contain it.
+    if (imageStore.some(i => i.id === nextItem.id)) {
+      gallery.appendChild(nextItem.element);
+      updateDecayUI();
+    } else {
+      console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
+      // Process next item immediately to avoid lag
+      tickerTimeout = setTimeout(processTicker, 0);
+      updateBufferUI(); // Ensure buffer count updates even if skipped
+      return;
+    }
     updateBufferUI();
-    updateDecayUI();
   }
 
   tickerTimeout = setTimeout(processTicker, renderInterval);
