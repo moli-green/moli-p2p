@@ -214,6 +214,7 @@ h1 {
 .gallery-item:hover {
   transform: translateY(-5px) scale(1.02);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  z-index: 100 !important;
 }
 
 .gallery-item img {
