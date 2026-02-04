@@ -2,7 +2,8 @@
 
 > "Presence is Storage." - Use it or lose it. An autonomous, distributed image gallery that lives only as long as you watch it.
 
-![Moli P2P](https://moli-green.is/moli-p2p-banner.png)
+![Moli P2P Demo](./moli-p2p-hero.webp)
+*Live P2P Mesh Demo (v1.7 Sovereign Edition)*
 
 ## Philosophy
 
