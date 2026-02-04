@@ -11,7 +11,7 @@ echo ">>> 🚀 Starting Manual Deployment (Pre-built Binaries)..."
 
 # 1. STOP Service
 echo ">>> 🛑 Stopping Service..."
-ssh $TARGET_HOST "sudo systemctl stop moli-server"
+ssh $TARGET_HOST "sudo systemctl stop moli-server || true"
 
 # 2. Upload Server Binary
 echo ">>> 📤 Uploading Server Binary..."
