@@ -32,7 +32,6 @@ app.innerHTML = `
         <div class="identity-section">
           <span id="my-id-icon" class="id-icon"></span>
           <span id="my-id" class="id-text">...</span>
-          <span id="identity-status" class="status-badge" style="font-size: 0.7em; padding: 2px 6px;">Loading...</span>
           <button id="id-burn-btn" class="burn-tiny-btn">🔥</button>
           <button id="help-btn" class="help-btn" title="Manual / Help">?</button>
         </div>
@@ -408,6 +407,14 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
   const img = document.createElement('img');
   img.src = url;
 
+  // Smart Pixelation: Use pixelated rendering ONLY for small images (likely pixel art)
+  // This prevents blurring on pixel art, while keeping high-res photos smooth (avoiding aliasing).
+  img.onload = () => {
+    if (img.naturalWidth < 128 || img.naturalHeight < 128) {
+      img.style.imageRendering = 'pixelated';
+    }
+  };
+
   // Safety by Default: Apply blur initially (unless Pinned locally)
   // Pinning implies "I checked this and want to keep it", so we trust pinned items.
   if (!isPinned) {
@@ -441,17 +448,17 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
   // function verifyGatewaySignature removed
   // The windmill will always be static now, as there's no verification.
   windmill.innerHTML = `
-  < svg viewBox = "0 0 100 100" width = "32" height = "32" style = "width: 32px; height: 32px;" >
-    <path d="M48 95 L52 95 L52 50 L48 50 Z" fill = "rgba(255,255,255,0.2)" />
-      <g>
-      <path d="M50 50 L50 10 L65 10 L65 45 Z" fill = "currentColor" />
-        <path d="M50 50 L90 50 L90 65 L55 65 Z" fill = "currentColor" />
-          <path d="M50 50 L50 90 L35 90 L35 55 Z" fill = "currentColor" />
-            <path d="M50 50 L10 50 L10 35 L45 35 Z" fill = "currentColor" />
-              </g>
-              < circle cx = "50" cy = "50" r = "5" fill = "currentColor" />
-                </svg>
-                  `;
+  <svg viewBox="0 0 100 100" width="32" height="32" style="width: 32px; height: 32px;">
+    <path d="M48 95 L52 95 L52 50 L48 50 Z" fill="rgba(255,255,255,0.2)" />
+    <g>
+      <path d="M50 50 L50 10 L65 10 L65 45 Z" fill="currentColor" />
+      <path d="M50 50 L90 50 L90 65 L55 65 Z" fill="currentColor" />
+      <path d="M50 50 L50 90 L35 90 L35 55 Z" fill="currentColor" />
+      <path d="M50 50 L10 50 L10 35 L45 35 Z" fill="currentColor" />
+    </g>
+    <circle cx="50" cy="50" r="5" fill="currentColor" />
+  </svg>
+  `;
 
   const overlay = document.createElement('div');
   overlay.className = 'card-overlay';
@@ -726,9 +733,9 @@ async function showUploadModal() {
       <div id="drop-zone" class="drop-zone">
         <p>Drag & Drop Artwork or Click to Select</p>
         <input type="file" id="modal-file-input" accept="image/*" style="display:none" />
-      </div>
-      <div id="upload-preview-container" style="display:none; text-align:center;">
-        <img id="upload-preview" class="upload-preview-img" />
+        <div id="upload-preview-container" style="display:none; text-align:center;">
+          <img id="upload-preview" class="upload-preview-img" />
+        </div>
       </div>
       <div class="modal-input-group">
         <button id="broadcast-final-btn" class="broadcast-final-btn" disabled>Broadcast to Mesh</button>
@@ -791,12 +798,28 @@ async function showUploadModal() {
     if (result.success) {
       lightbox.style.display = 'none';
       lightbox.innerHTML = '';
+      selectedFile = null;
+      dropZone.classList.remove('dragover');
+      dropZone.style.display = 'block';
+      previewContainer.style.display = 'none';
+      previewImg.src = '';
     } else {
       broadcastBtn.disabled = false;
       broadcastBtn.textContent = "Broadcast to Mesh";
     }
   };
 }
+
+// --- Startup Sequence ---
+(async () => {
+  try {
+    await initBlacklist();
+    await initVaultAndLoad();
+  } catch (err: any) {
+    console.error("Startup Warning:", err);
+    showToast(`Startup Partial: ${err.message || err}`, 'warn');
+  }
+})();
 
 
 function showHelpModal() {
@@ -821,12 +844,8 @@ function showHelpModal() {
 
       <div class="help-section">
         <h3>🎨 Actions</h3>
-        
         <p style="margin-bottom: 10px;"><strong>📌 Pin (Save)</strong><br>
         Saves a copy of the soul (image) to your local Vault. Pinned items are automatically re-broadcasted when you rejoin the mesh.</p>
-
-        <p style="margin-bottom: 10px;"><strong>✨ Broadcast</strong><br>
-        Uploads a new soul to the mesh. It propagates to connected peers immediately.</p>
 
         <p style="margin-bottom: 10px;"><strong>✨ Broadcast</strong><br>
         Uploads a new soul to the mesh. It propagates to connected peers immediately.</p>
@@ -908,40 +927,16 @@ if (idBurnBtn) {
     await initVaultAndLoad();
 
     myIdSpan.textContent = network.myId;
-    myIdSpan.title = `My Identity: ${network.myId}`;
+    myIdSpan.title = `My Identity: ${network.myId} `;
     myIdSpan.style.color = getPeerColor(network.myId);
     myIdIcon.innerHTML = jdenticon.toSvg(network.myId, 20);
-    showToast(`Sovereign Soul Ready: ${network.myId.substring(0, 8)}`, 'success');
+    showToast(`Sovereign Soul Ready: ${network.myId.substring(0, 8)} `, 'success');
 
-    // Identity Status Updater
-    const updateIdentityStatus = () => {
-      const statusSpan = document.getElementById('identity-status');
-      if (!statusSpan) return;
 
-      const age = Date.now() - network.identity.createdAt;
-      const MATURE_AGE = 24 * 60 * 60 * 1000; // Production: 24 hours
-
-      if (age < MATURE_AGE) {
-        const hoursLeft = Math.ceil((MATURE_AGE - age) / (60 * 60 * 1000));
-        statusSpan.textContent = `Infant (Mature in ${hoursLeft}h)`;
-        statusSpan.classList.add('infant');
-        statusSpan.classList.remove('mature');
-        statusSpan.title = "Infant Identity: Upload/Tribute limits active.";
-      } else {
-        statusSpan.textContent = `Sovereign (Mature)`;
-        statusSpan.classList.add('mature');
-        statusSpan.classList.remove('infant');
-        statusSpan.title = "Fully sovereign identity.";
-      }
-    };
-
-    updateIdentityStatus();
-    setInterval(updateIdentityStatus, 1000); // Debug: Update every second
 
   } catch (err: any) {
     console.error("FATAL INITIALIZATION ERROR:", err);
-    document.querySelector('#identity-status')!.textContent = "Init Error";
-    document.querySelector('#identity-status')!.classList.add('infant');
+
     showToast(`Startup Failed: ${err.message || err}. Try Burning Identity.`, 'error');
   }
 
