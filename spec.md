@@ -560,3 +560,8 @@ To maximize maintainability and focus on the core "Human-to-Human" experience, w
 -   **Integrity Check**: Incoming blobs are hashed and compared to signed metadata. Mismatches are discarded before relaying.
 -   **TTL Clamping**: Excessive TTL requests from peers are clamped to the local maximum to prevent amplification attacks.
 
+### F. Signaling Sharding (The Ark)
+-   **Room Logic**: Server randomly assigns peers to isolated rooms of **100** capacity.
+-   **Goal**: Prevents "Signaling Storms" from crashing the server or flooding clients.
+-   **Effect**: A massive influx of users (e.g., 10,000) is partitioned into 100 safe islands.
+
