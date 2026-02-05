@@ -9,3 +9,4 @@ window.addEventListener('unhandledrejection', function (event) {
     div.style.display = 'block';
     div.innerHTML += '<br><h3>Promise Rejection</h3>' + event.reason;
 });
+// @license-end
