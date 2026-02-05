@@ -28,7 +28,8 @@ export default defineConfig({
         },
         minify: 'terser',
         terserOptions: {
-            output: {
+            // @ts-ignore
+            format: {
                 comments: 'some',
             },
         },
