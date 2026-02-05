@@ -550,3 +550,13 @@ To maximize maintainability and focus on the core "Human-to-Human" experience, w
 -   **Smart Pixelation**: Added logic to apply `image-rendering: pixelated` *only* to small images (<128px), ensuring Pixel Art looks crisp while Photos remain smooth.
 -   **Aesthetic Hero**: Updated documentation with a generative-art hero video.
 
+### D. Gossip Protocol V1 (Lazy Gossip)
+-   **Connection Limiter**: `MAX_PEERS = 6`. Prevents signaling storms while maintaining mesh density.
+-   **Relay Logic**: `GOSSIP_TTL = 3`. Ensures local message spread without flooding the entire network.
+-   **Deduplication**: `MessageCache` prevents loops.
+
+### E. Security Hardening (Trust No One)
+-   **Burn Isolation**: "Burn" signals are NOT broadcasted. Removing an image only affects the local peer and blacklists the hash locally.
+-   **Integrity Check**: Incoming blobs are hashed and compared to signed metadata. Mismatches are discarded before relaying.
+-   **TTL Clamping**: Excessive TTL requests from peers are clamped to the local maximum to prevent amplification attacks.
+
