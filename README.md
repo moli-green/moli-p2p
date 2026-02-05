@@ -8,7 +8,7 @@
 ## v1.7.5 Sovereign Update
 - **No More Restrictions**: Abolished all age-based limits ("Infant" logic).
 - **Sovereign Reset**: New Glassmorphism-style "Danger Modal" for secure identity destruction.
-- **Immediate Defense**: Burning content is now available to all peers instantly.
+- **Sakoku Policy (Isolation)**: "Burn" actions are now strictly local ("My Computer, My Castle"). Burning removes content from your view but does not broadcast signals to others, preventing abuse.
 
 ## Philosophy
 

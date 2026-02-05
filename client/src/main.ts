@@ -304,18 +304,7 @@ async function initBlacklist(): Promise<void> {
   });
 }
 
-async function persistToBlacklist(hash: string): Promise<void> {
-  return new Promise((resolve) => {
-    const request = indexedDB.open(BLACKLIST_DB_NAME, 1);
-    request.onsuccess = () => {
-      const db = request.result;
-      const tx = db.transaction(BLACKLIST_STORE, 'readwrite');
-      const store = tx.objectStore(BLACKLIST_STORE);
-      store.put(true, hash);
-      tx.oncomplete = () => resolve();
-    };
-  });
-}
+
 
 function updateBufferUI() {
   bufferCountSpan.textContent = renderQueue.length.toString();
@@ -597,12 +586,24 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
   burnActionBtn.title = 'Signal malicious content (Global)';
   burnActionBtn.onclick = async (e) => {
     e.stopPropagation();
-    if (confirm('CONFIRMATION: Are you sure you want to BURN this soul? This action broadcasts a block signal to the mesh and cannot be undone.')) {
-      await network.broadcastBurn(hash);
-      await persistToBlacklist(hash);
-      removeImageFromGallery(hash);
-      Vault.remove(hash);
-      showToast("Content burned and signaled.", "success");
+    if (confirm('CONFIRMATION: Are you sure you want to BURN this soul? This action cannot be undone.')) {
+      const item = imageStore.find(i => i.id === id);
+      if (!item) return;
+
+      // Sakoku Policy: Local Block Only
+      // We do NOT broadcast burn signals. We only clean our own castle.
+      console.log(`[Burn] Local Block executed for ${item.hash}`);
+
+      // 1. Add to Blacklist
+      network.addToBlacklist(item.hash);
+
+      // 2. Remove from Vault
+      await Vault.remove(item.hash);
+
+      // 3. Remove from UI
+      removeImageFromGallery(item.hash);
+
+      showToast("Content burned from local view.", "success");
     }
   };
 
@@ -721,10 +722,7 @@ const network = new P2PNetwork(
   }
 );
 
-network.setBurnCallback(async (hash) => {
-  console.log(`[Burn] Advisory Signal for ${hash}`);
-  showToast("Peer Flagged Content (Advisory Only)", "info");
-});
+// Burn Callback Removed (Sakoku Policy)
 
 network.setInventoryCallback((peerId, hashes) => {
   hashes.forEach(hash => {
@@ -1002,7 +1000,7 @@ function showHelpModal() {
   pIntro.style.opacity = '0.7';
   pIntro.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
   pIntro.style.paddingBottom = '15px';
-  pIntro.textContent = 'Welcome to the Autonomous Distributed Gallery. This is a ephemeral mesh network where content exists only as long as someone holds it.';
+  pIntro.textContent = 'Welcome to the Autonomous Distributed Gallery. This is an ephemeral mesh network where content exists only as long as someone holds it.';
 
   const sectionIdentity = document.createElement('div');
   sectionIdentity.className = 'help-section';
@@ -1047,13 +1045,10 @@ function showHelpModal() {
   h3Safe.textContent = '🛡️ Safety & Moderation';
   const pBurn = document.createElement('p');
   const strongBurn = document.createElement('strong');
-  strongBurn.textContent = '🔥 Burn Protocol:';
+  strongBurn.textContent = '🔥 Burn (Local Block):';
   pBurn.appendChild(strongBurn);
-  pBurn.appendChild(document.createTextNode(' If you encounter malicious content, you can '));
-  const strongBurn2 = document.createElement('strong');
-  strongBurn2.textContent = 'Burn';
-  pBurn.appendChild(strongBurn2);
-  pBurn.appendChild(document.createTextNode(' it (Global).'));
+  pBurn.appendChild(document.createElement('br'));
+  pBurn.appendChild(document.createTextNode('Removes the content from your device and blocks it from re-entering. This action is local only—"My Computer, My Castle". It does not delete content from other peers.'));
 
   const pRemove = document.createElement('p');
   pRemove.style.marginTop = '10px';

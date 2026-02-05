@@ -1,4 +1,4 @@
-import type { SignalMessage, BurnSignal } from './types';
+import type { SignalMessage } from './types';
 import { PeerIdentity } from './PeerIdentity';
 
 interface FileOffer {
@@ -11,6 +11,7 @@ interface FileOffer {
     isPinned?: boolean;
     tributeTag?: string;
     receipt?: any;
+    ttl?: number; // Gossip V1
 }
 
 interface FileMetadata {
@@ -26,6 +27,7 @@ interface FileMetadata {
     isPinned?: boolean;
     tributeTag?: string;
     receipt?: any;
+    ttl?: number; // Gossip V1
 }
 
 export class PeerSession {
@@ -65,7 +67,7 @@ export class PeerSession {
         private _peerId: string, // SessionID
         private identity: PeerIdentity,
         private sendSignal: (msg: SignalMessage) => void,
-        private onImage: (blob: Blob, peerId: string, isPinned?: boolean, publicKey?: string, name?: string, tributeTag?: string, receipt?: any) => void,
+        private onImage: (blob: Blob, peerId: string, isPinned?: boolean, publicKey?: string, name?: string, tributeTag?: string, receipt?: any, ttl?: number) => void,
         private network: { canReceiveFrom: (peerId: string) => boolean },
         private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
         realPeerId?: string, // Deterministic Cryptographic ID
@@ -313,24 +315,10 @@ export class PeerSession {
                     console.log(`[${this.myId}] Received INVENTORY from ${this.peerId}: ${(msg.hashes || []).length} images`);
                     this.onSessionEvent?.('inventory', this, msg.hashes);
                 } else if (msg.type === 'burn') {
-                    const burner = msg as BurnSignal;
-                    // Deregulation v1.7.5: Immediate Defense (No Age Check)
-
-
-                    try {
-                        const spki = Uint8Array.from(atob(burner.publicKey), c => c.charCodeAt(0)).buffer;
-                        const pubKey = await this.identity.importPublicKey(spki);
-                        const isValid = await this.identity.verifyBurn(pubKey, burner.signature, burner.hash, burner.identityCreatedAt);
-
-                        if (isValid) {
-                            console.log(`[Burn] VERIFIED Burn for ${burner.hash} from mature peer ${this.peerId}`);
-                            this.onSessionEvent?.('burn', this, burner);
-                        } else {
-                            console.error(`[Burn] CRYPTO FAILURE: Invalid burn signature from ${this.peerId}`);
-                        }
-                    } catch (e) {
-                        console.error('[Burn] Verification error:', e);
-                    }
+                    // POLICY: Sakoku (Lockdown)
+                    // We ignore all external burn commands. My Computer, My Castle.
+                    console.log(`[Burn] IGNORED external burn signal from ${this.peerId}. (Sakoku Policy)`);
+                    return;
                 }
             } catch (e) {
                 console.error(`[${this.myId}] Error handling data message from ${this.peerId}:`, e, data);
@@ -360,9 +348,27 @@ export class PeerSession {
             }
 
             if (this.receivedSize >= this.currentMeta.size) {
-                console.log(`[${this.myId}] File Receive Complete! ${this.receivedSize} bytes`);
+                console.log(`[${this.myId}] File Receive Complete! ${this.receivedSize} bytes. TTL: ${this.currentMeta.ttl}`);
+
+                // SECURITY: Integrity Check (Hash-on-Receive)
+                // Prevent Bait-and-Switch attacks by relays
                 const blob = new Blob(this.receivedBuffers, { type: this.currentMeta.mime });
-                this.onImage(blob, this.peerId, this.currentMeta.isPinned, this.currentMeta.publicKey, this.currentMeta.name, this.currentMeta.tributeTag, this.currentMeta.receipt);
+                const buffer = await blob.arrayBuffer();
+                const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                const computedHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+                if (computedHash !== this.currentMeta.hash) {
+                    console.error(`[${this.myId}] SECURITY ALERT: Hash Mismatch! Declared: ${this.currentMeta.hash}, Computed: ${computedHash}. Discarding data.`);
+                    // We DO NOT call onImage. The data is compromised or corrupted.
+                    this.currentMeta = null;
+                    this.receivedBuffers = [];
+                    this.receivedSize = 0;
+                    return;
+                }
+
+                console.log(`[${this.myId}] Integrity Verified. Hash matches.`);
+                this.onImage(blob, this.peerId, this.currentMeta.isPinned, this.currentMeta.publicKey, this.currentMeta.name, this.currentMeta.tributeTag, this.currentMeta.receipt, this.currentMeta.ttl);
 
                 // Reset
                 this.currentMeta = null;
@@ -372,12 +378,13 @@ export class PeerSession {
         }
     }
 
-    public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, tributeTag?: string, receipt?: any) {
+    public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, tributeTag?: string, receipt?: any, ttl?: number) {
         (blob as any).fileHash = hash;
         (blob as any).isPinned = isPinned;
         (blob as any).fileName = name || (blob as File).name || 'image.png';
         (blob as any).tributeTag = tributeTag;
         (blob as any).receipt = receipt;
+        (blob as any).ttl = ttl;
         this.sendQueue.push(blob);
         this.processQueue();
     }
@@ -408,7 +415,7 @@ export class PeerSession {
         const isPinned = (blob as any).isPinned || false;
         const tributeTag = (blob as any).tributeTag;
         const receipt = (blob as any).receipt;
-
+        const ttl = (blob as any).ttl; // Could be undefined (new broadcast) or number (relay)
         console.log(`[${this.myId}] Offering Image to ${this.peerId}: ${totalSize} bytes (${transferId}) Pinned: ${isPinned}`);
 
         // 1. Send Offer
@@ -422,6 +429,7 @@ export class PeerSession {
             isPinned,
             tributeTag,
             receipt,
+            ttl,
         };
         this.currentOfferedTransferId = transferId;
         this.dc?.send(JSON.stringify(offer));
@@ -453,6 +461,7 @@ export class PeerSession {
             isPinned,
             tributeTag,
             receipt,
+            ttl,
         };
         this.dc?.send(JSON.stringify(meta));
 
@@ -508,8 +517,6 @@ export class PeerSession {
         }
     }
 
-    public async sendBurnSignal(signal: BurnSignal) {
-        if (!this.dc || this.dc.readyState !== 'open') return;
-        this.dc.send(JSON.stringify(signal));
-    }
+    // Burn Signal removed (Sakoku Policy)
+    // public sendBurnSignal(...) {}
 }

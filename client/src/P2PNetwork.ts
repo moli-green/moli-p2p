@@ -1,8 +1,9 @@
-import { SignalSchema, type SignalMessage, type BurnSignal } from './types';
+import { SignalSchema, type SignalMessage } from './types';
 // Unused Vault import removed
 import { PeerSession } from './PeerSession';
 import { PeerIdentity } from './PeerIdentity';
 import { v4 as uuidv4 } from 'uuid';
+import { MAX_PEERS, GOSSIP_TTL, CACHE_SIZE } from './constants';
 
 export class P2PNetwork {
     public myId: string = ''; // This is PeerID
@@ -13,6 +14,7 @@ export class P2PNetwork {
     public identity: PeerIdentity;
     private bucketRegistry = new Map<string, { tokens: number, lastRefill: number }>();
     private blacklist = new Set<string>(); // Image hashes
+    private seenMessages = new Set<string>(); // Gossip V1 Deduplication (Content Hash)
     private activeIceServers: RTCIceServer[] | undefined;
 
     constructor(
@@ -137,13 +139,52 @@ export class P2PNetwork {
 
         let session = this.sessions.get(senderId);
         if (!session) {
+            // Gossip V1: Connection Limiter
+            // Allow specific target replies (handshake completion) but limit random broadcast joins
+            const isTargeted = !!msg.targetId;
+            if (!isTargeted && this.connectedPeerCount >= MAX_PEERS) {
+                // Ignore random joins if full
+                return;
+            }
+
             // const peerId = this.sessionToPeer.get(senderId) || senderId; // Unused
             session = new PeerSession(
                 this.sessionId,
                 senderId,
                 this.identity,
                 (m) => this.broadcast(m),
-                this.onImage,
+                (blob: Blob, pId: string, pinned?: boolean, pub?: string, name?: string, tribute?: string, receipt?: any, ttl?: number) => {
+                    // Gossip V1: Relay Logic
+                    const hash = (blob as any).fileHash as string | undefined;
+                    if (hash && this.seenMessages.has(hash)) {
+                        console.log(`[Gossip] Duplicate image ignored: ${hash.substring(0, 8)}`);
+                        return;
+                    }
+                    if (hash) {
+                        this.seenMessages.add(hash);
+                        if (this.seenMessages.size > CACHE_SIZE) {
+                            const iter = this.seenMessages.values();
+                            const val = iter.next().value;
+                            if (val) this.seenMessages.delete(val);
+                        }
+                    }
+
+                    // Trigger UI
+                    this.onImage(blob, pId, pinned, pub, name, tribute, receipt);
+
+                    // Relay
+                    const currentTtl = typeof ttl === 'number' ? ttl : 0;
+                    if (currentTtl > 0) {
+                        // Trust No One: Clamp TTL to prevent amplification attacks
+                        // If neighbor sends 999, we treat it as max GOSSIP_TTL (3)
+                        const clampedTtl = Math.min(currentTtl, GOSSIP_TTL);
+                        const nextTtl = clampedTtl - 1;
+
+                        const safeHash = hash || '';
+                        console.log(`[Gossip] Relaying ${name || 'image'} to mesh (TTL: ${nextTtl}, Orig: ${currentTtl})`);
+                        this.broadcastImage(blob, safeHash, pinned, name, tribute, receipt, nextTtl, senderId);
+                    }
+                },
                 this,           // Sovereign Guard Registry interface
                 (type, s, d) => this.handleSessionEvent(type, s, d),
                 undefined,
@@ -168,38 +209,34 @@ export class P2PNetwork {
         return count;
     }
 
-    public broadcastImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, tributeTag?: string, receipt?: any) {
+    public broadcastImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, tributeTag?: string, receipt?: any, ttl: number = GOSSIP_TTL, excludePeerId?: string) {
+        // Add to own seen messages to prevent reflection
+        if (!this.seenMessages.has(hash)) {
+            this.seenMessages.add(hash);
+            if (this.seenMessages.size > CACHE_SIZE) {
+                const iter = this.seenMessages.values();
+                const val = iter.next().value;
+                if (val) this.seenMessages.delete(val);
+            }
+        }
+
         let sentCount = 0;
         this.sessions.forEach(session => {
-            if (session.isConnected) {
-                session.sendImage(blob, hash, isPinned, name, tributeTag, receipt);
+            if (session.isConnected && session.sessionPeerId !== excludePeerId) {
+                // Pass TTL to Send
+                session.sendImage(blob, hash, isPinned, name, tributeTag, receipt, ttl);
                 sentCount++;
             }
         });
         if (sentCount === 0) {
-            console.warn('No active peers connected. Image not sent.');
+            console.warn('No active peers connected (or all excluded). Image not sent.');
         } else {
-            console.log(`Sending image to ${sentCount} peers.`);
+            console.log(`Sending image to ${sentCount} peers (TTL: ${ttl}).`);
         }
     }
 
-    public async broadcastBurn(hash: string) {
-        this.blacklist.add(hash);
-        const signature = await this.identity.signBurn(hash);
-        const publicKeyB64 = this.identity.publicKeySpki ? btoa(String.fromCharCode(...new Uint8Array(this.identity.publicKeySpki))) : '';
-
-        const signal: BurnSignal = {
-            type: 'burn',
-            hash,
-            publicKey: publicKeyB64,
-            signature,
-            identityCreatedAt: this.identity.createdAt
-        };
-
-        this.sessions.forEach(s => {
-            if (s.isConnected) s.sendBurnSignal(signal);
-        });
-    }
+    // Burn Relay Removed (Sakoku Policy)
+    // public broadcastBurn(...) {}
 
     private handleSessionEvent(type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) {
         if (type === 'connected') {
@@ -214,12 +251,9 @@ export class P2PNetwork {
         } else if (type === 'offer-file') {
             this.onOfferFile?.(session, data);
         } else if (type === 'burn') {
-            const signal = data as BurnSignal;
-            // Sovereign Guard: Principle of Non-Interference
-            // We log the signal for debugging but DO NOT execute any local deletion or blacklisting based on external triggers.
-            // My computer is my castle.
-            console.log(`[Sovereign Guard] Advisory Burn Signal received for ${signal.hash.substring(0, 8)}. Ignoring action.`);
-            this.onBurnReceived?.(signal.hash); // Added to silence unused variable warning and notify UI of advisory signal
+            // POLICY: Sakoku (Local Only)
+            // Do not relay.
+            console.log(`[Network] Burn event for ${data.hash} handled locally. NOT broadcasting.`);
         }
     }
 
@@ -233,8 +267,5 @@ export class P2PNetwork {
         this.onOfferFile = cb;
     }
 
-    private onBurnReceived?: (hash: string) => void;
-    public setBurnCallback(cb: (hash: string) => void) {
-        this.onBurnReceived = cb;
-    }
+    // Burn Callback Removed (Sakoku Policy)
 }
