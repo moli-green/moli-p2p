@@ -565,3 +565,28 @@ To maximize maintainability and focus on the core "Human-to-Human" experience, w
 -   **Goal**: Prevents "Signaling Storms" from crashing the server or flooding clients.
 -   **Effect**: A massive influx of users (e.g., 10,000) is partitioned into 100 safe islands.
 
+
+## 18. Server Hardening & Connectivity (v1.7.6 - 2026-02-06)
+
+### A. IPv6 Dual-Stack Support
+- **Issue**: Modern mobile networks (ISP) often use IPv6-only infrastructure, making IPv4-only servers unreachable without translation.
+- **Solution**: The Rust Signaling Server now explicitly binds to `[::]:9090` (IPv6 Unspecified).
+- **Effect**: Server accepts connections from both IPv4 and IPv6 clients.
+
+### B. Ephemeral Authentication (TURN Security)
+- **Issue**: Hardcoded TURN credentials in the client posed a security risk for public release.
+- **Solution**:
+  - **API**: Implemented `GET /api/ice-config` endpoint on the server.
+  - **Logic**: Returns time-limited (1 Hour) credentials signed with HMAC-SHA1.
+  - **Secret**: Server (`TURN_SECRET`) and Coturn (`static-auth-secret`) share a rotational secret key, never exposed to the client code.
+
+### C. Identity Authority (Anti-Spoofing)
+- **Issue**: Clients self-reporting their `senderId` allowed malicious actors to impersonate others (sending fake "Leave" signals).
+- **Solution**:
+  - **Server Authority**: The Server now generates a UUID for every connection (`my_id`).
+  - **Force Overwrite**: The Server parses every upstream message and *force-overwrites* the `senderId` field with the trusted `my_id` before broadcasting.
+  - **Handshake**: The Server sends `{"type": "identity", "senderId": "..."}` immediately upon connection. The Client waits for this message before initializing its P2P state.
+
+### D. Denial of Service (DoS) Protection
+- **Rule**: Max WebSocket Message Size = **16 KB**.
+- **Action**: Messages exceeding this limit are silently dropped by the server.
