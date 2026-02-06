@@ -41,7 +41,7 @@ async fn main() {
         .route("/ws", get(ws_handler))
         .with_state(app_state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 9090));
+    let addr = SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 0], 9090));
     println!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
