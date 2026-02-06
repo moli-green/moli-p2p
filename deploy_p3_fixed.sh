@@ -3,13 +3,16 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 
 # --- Configuration ---
-DOMAIN="moli-green.is"
-EMAIL="moli@moli-green.is"
-TURN_USER="moli"
-TURN_PASS="honor_p2p_secret"
-REALM="moli-green.is"
-SOURCE_DIR="/home/moli/moli-p2p-source"
-APP_DIR="/var/www/moli-p2p"
+# Load from external config (deployed via rsync)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/deploy.config" ]; then
+    source "$SCRIPT_DIR/deploy.config"
+else
+    echo "ERROR: deploy.config not found in $SCRIPT_DIR"
+    exit 1
+fi
+
+# Variables from config: DOMAIN, EMAIL, TURN_USER, TURN_PASS, REALM, SOURCE_DIR, APP_DIR
 
 echo ">>> Starting Moli P2P App Deployment (Phase 3: Fixed)..."
 

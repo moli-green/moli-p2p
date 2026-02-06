@@ -1,0 +1,21 @@
+# Deployment Configuration Template
+# Copy this to deploy.config and fill in your values.
+
+# Connection
+DEPLOY_USER="user"
+DEPLOY_HOST="example.com"
+TARGET_DIR="/var/www/moli-p2p"
+
+# App Settings
+DOMAIN="example.com"
+EMAIL="admin@example.com"
+
+# TURN Settings
+TURN_USER="moli"
+TURN_PASS="your_secure_turn_password"
+REALM="example.com"
+
+# Remote Paths
+# Note: APP_DIR should match TARGET_DIR
+APP_DIR="/var/www/moli-p2p"
+SOURCE_DIR="/home/user/moli-p2p-source"

@@ -2,8 +2,10 @@
 set -e
 
 # Configuration
-TARGET_HOST="moli@moli-green.is"
-TARGET_DIR="/var/www/moli-p2p"
+source ./deploy.config
+
+TARGET_HOST="$DEPLOY_USER@$DEPLOY_HOST"
+# TARGET_DIR is loaded from deploy.config
 
 echo ">>> 🚀 Starting Deployment to $TARGET_HOST..."
 

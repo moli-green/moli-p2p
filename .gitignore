@@ -37,6 +37,9 @@ id_*
 .env
 .env.*
 
+# Deployment Config
+deploy.config
+
 # --- Cleanup ---
 # 不要なGitの痕跡（マトリョーシカ防止）
 **/.git
