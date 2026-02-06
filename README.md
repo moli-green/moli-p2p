@@ -3,14 +3,17 @@
 > "Presence is Storage." - Use it or lose it. An autonomous, distributed image gallery that lives only as long as you watch it.
 
 ![Moli P2P Demo](./moli-p2p-hero.webp)
-*Live P2P Mesh Demo (v1.7.5 Sovereign Edition - No Age Restrictions)*
+*Live P2P Mesh Demo (v1.7.7 Sovereign Edition)*
 
-## v1.7.5 Sovereign Update
-- **No More Restrictions**: Abolished all age-based limits ("Infant" logic).
-- **Sovereign Reset**: New Glassmorphism-style "Danger Modal" for secure identity destruction.
-- **Sakoku Policy (Isolation)**: "Burn" actions are now strictly local ("My Computer, My Castle"). Burning removes content from your view but does not broadcast signals to others, preventing abuse.
-- **IPv6 Dual-Stack**: Native support for modern mobile networks, listening on both IPv4 and IPv6 (`[::]:9090`).
-- **Ephemeral Authentication**: Security hardening for the signaling layer. TURN credentials are now time-limited and cryptographically signed (HMAC-SHA1), eliminating hardcoded secrets from the codebase.
+## v1.7.7 Sovereign Update (Security Hardening)
+- **Client Resilience**: Fixed critical "Resource Starvation" DoS vulnerability. Implemented smart timeouts for stalled transfers and strict error feedback loops.
+- **Server Hardening**:
+    - **Identity Authority**: Server now assigns and enforces cryptographic identities, preventing spoofing.
+    - **DoS Protection**: Added Token Bucket rate limiting (10 msg/sec) and strict message size limits (16KB).
+    - **Secure Credentials**: Ephemeral TURN credentials signed with HMAC-SHA1 to prevent replay attacks.
+- **Docker Security**: Strict enforcement of `TURN_SECRET` environment variables to prevent insecure default deployments.
+- **Sovereign Reset**: New "Danger Modal" for secure identity destruction.
+- **Sakoku Policy**: "Burn" actions are strictly local ("My Computer, My Castle"), preventing moderation spam.
 
 ## Philosophy
 

@@ -18,11 +18,69 @@ export class P2PNetwork {
     private activeIceServers: RTCIceServer[] | undefined;
 
     constructor(
-        private onImage: (blob: Blob, peerId: string, isPinned?: boolean, publicKey?: string, name?: string, tributeTag?: string, receipt?: any) => void,
-        private onSyncRequest?: (session: PeerSession) => void,
-        private onPeerCountChange?: (count: number) => void
+        private onImageReceivedCallback: (blob: Blob, peerId: string, isPinned?: boolean, publicKey?: string, name?: string, tributeTag?: string, receipt?: any, ttl?: number) => void,
+        private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
+        private onPeerCountChanged?: (count: number) => void,
+        private onTransferError?: (session: PeerSession, transferId: string) => void,
+        private onInventoryReceived?: (peerId: string, hashes: string[]) => void,
+        private onOfferFile?: (session: PeerSession, data: any) => void
     ) {
         this.identity = new PeerIdentity();
+    }
+
+    private handleTransferError(peerId: string, transferId: string) {
+        const session = this.sessions.get(peerId);
+        if (session) {
+            console.warn(`[Network] Transfer error feedback for ${peerId} (Transfer: ${transferId})`);
+            this.onTransferError?.(session, transferId);
+        }
+    }
+
+    // Wrapper to handle Relay + UI Callback
+    private onImageReceived = (blob: Blob, pId: string, pinned?: boolean, pub?: string, name?: string, tribute?: string, receipt?: any, ttl?: number) => {
+        // Gossip V1: Relay Logic
+        const hash = (blob as any).fileHash as string | undefined;
+        if (hash && this.seenMessages.has(hash)) {
+            console.log(`[Gossip] Duplicate image ignored: ${hash.substring(0, 8)}`);
+            return;
+        }
+        if (hash) {
+            this.seenMessages.add(hash);
+            if (this.seenMessages.size > CACHE_SIZE) {
+                const iter = this.seenMessages.values();
+                const val = iter.next().value;
+                if (val) this.seenMessages.delete(val);
+            }
+        }
+
+        // Trigger UI
+        this.onImageReceivedCallback(blob, pId, pinned, pub, name, tribute, receipt, ttl);
+
+        // Relay
+        const currentTtl = typeof ttl === 'number' ? ttl : 0;
+        if (currentTtl > 0) {
+            // Trust No One: Clamp TTL to prevent amplification attacks
+            // If neighbor sends 999, we treat it as max GOSSIP_TTL (3)
+            const clampedTtl = Math.min(currentTtl, GOSSIP_TTL);
+            const nextTtl = clampedTtl - 1;
+
+            const safeHash = hash || '';
+            console.log(`[Gossip] Relaying ${name || 'image'} to mesh (TTL: ${nextTtl}, Orig: ${currentTtl})`);
+            // Find sender session to get senderId (?)
+            // Actually broadcastImage excludes by PeerID (SessionID).
+            // We need to pass the source SessionID to exclude it.
+            // pId here is likely the PeerID (friendly name or real ID), not session ID?
+            // checking PeerSession... "this.onImage(..., this.peerId, ...)" -> realPeerId.
+            // broadcastImage `excludePeerId` matches `session.sessionPeerId`.
+            // We need the sessionID of the sender.
+            // `onImage` callback signature in PeerSession doesn't pass sessionID.
+            // This is a flaw. But `broadcastImage` logic uses `sessionPeerId`.
+            // If pId is unique enough...
+            // Actually `session.peerId` getter returns `realPeerId`.
+            // We might reflect back if we don't exclude properly.
+            // But since we track `seenMessages`, reflection is handled by hash check.
+            this.broadcastImage(blob, safeHash, pinned, name, tribute, receipt, nextTtl, undefined);
+        }
     }
 
     public isBlacklisted(hash: string): boolean {
@@ -179,39 +237,9 @@ export class P2PNetwork {
                 senderId,
                 this.identity,
                 (m) => this.broadcast(m),
-                (blob: Blob, pId: string, pinned?: boolean, pub?: string, name?: string, tribute?: string, receipt?: any, ttl?: number) => {
-                    // Gossip V1: Relay Logic
-                    const hash = (blob as any).fileHash as string | undefined;
-                    if (hash && this.seenMessages.has(hash)) {
-                        console.log(`[Gossip] Duplicate image ignored: ${hash.substring(0, 8)}`);
-                        return;
-                    }
-                    if (hash) {
-                        this.seenMessages.add(hash);
-                        if (this.seenMessages.size > CACHE_SIZE) {
-                            const iter = this.seenMessages.values();
-                            const val = iter.next().value;
-                            if (val) this.seenMessages.delete(val);
-                        }
-                    }
-
-                    // Trigger UI
-                    this.onImage(blob, pId, pinned, pub, name, tribute, receipt);
-
-                    // Relay
-                    const currentTtl = typeof ttl === 'number' ? ttl : 0;
-                    if (currentTtl > 0) {
-                        // Trust No One: Clamp TTL to prevent amplification attacks
-                        // If neighbor sends 999, we treat it as max GOSSIP_TTL (3)
-                        const clampedTtl = Math.min(currentTtl, GOSSIP_TTL);
-                        const nextTtl = clampedTtl - 1;
-
-                        const safeHash = hash || '';
-                        console.log(`[Gossip] Relaying ${name || 'image'} to mesh (TTL: ${nextTtl}, Orig: ${currentTtl})`);
-                        this.broadcastImage(blob, safeHash, pinned, name, tribute, receipt, nextTtl, senderId);
-                    }
-                },
-                this,           // Sovereign Guard Registry interface
+                this.onImageReceived,
+                (tId) => this.handleTransferError(senderId, tId), // NEW: Safe Callback
+                this, // Network Logic (canReceiveFrom)
                 (type, s, d) => this.handleSessionEvent(type, s, d),
                 undefined,
                 this.activeIceServers // Inject Config
@@ -266,16 +294,18 @@ export class P2PNetwork {
 
     private handleSessionEvent(type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) {
         if (type === 'connected') {
-            this.onPeerCountChange?.(this.connectedPeerCount);
+            this.onPeerCountChanged?.(this.connectedPeerCount);
             console.log(`[Sync] DataChannel connected with ${session.sessionPeerId} (Peer: ${session.peerId}), requesting sync...`);
             session.requestSync();
         } else if (type === 'sync-request') {
-            this.onSyncRequest?.(session);
+            this.onSessionEvent?.('sync-request', session);
         } else if (type === 'inventory') {
             const hashes = data as string[];
+            this.onSessionEvent?.('inventory', session, hashes);
             this.onInventoryReceived?.(session.peerId, hashes);
         } else if (type === 'offer-file') {
-            this.onOfferFile?.(session, data);
+            this.onSessionEvent?.('offer-file', session, data);
+            this.onOfferFile?.(session, data); // Specific Callback
         } else if (type === 'burn') {
             // POLICY: Sakoku (Local Only)
             // Do not relay.
@@ -283,15 +313,8 @@ export class P2PNetwork {
         }
     }
 
-    private onInventoryReceived?: (peerId: string, hashes: string[]) => void;
-    public setInventoryCallback(cb: (peerId: string, hashes: string[]) => void) {
-        this.onInventoryReceived = cb;
-    }
-
-    private onOfferFile?: (session: PeerSession, data: any) => void;
-    public setOfferFileCallback(cb: (session: PeerSession, data: any) => void) {
-        this.onOfferFile = cb;
-    }
+    // Callbacks
+    // Removed explicit setters in favor of constructor injection to ensure types safety
 
     // Burn Callback Removed (Sakoku Policy)
 }

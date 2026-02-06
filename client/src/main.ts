@@ -705,37 +705,40 @@ const network = new P2PNetwork(
     // Sovereign Safety: Incoming images are untrusted (unpinned) by default, forcing the Blur.
     addImageToGallery(blob, false, peerId, false, name);
   },
-  (session: PeerSession) => {
-    console.log(`[Sync] Handshake with ${session.peerId}. Sending ${imageStore.length} images.`);
-    // Send pinned first, then others
-    const sorted = [...imageStore].sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
-
-    sorted.forEach(item => {
-      fetch(item.url).then(r => r.blob()).then(blob => {
-        session.sendImage(blob, item.hash, item.isPinned, item.caption);
+  (type, session, _data) => {
+    // Generic Event Handler (Sync Logic)
+    if (type === 'connected') {
+      console.log(`[Sync] Handshake with ${session.peerId}. Sending ${imageStore.length} images.`);
+      const sorted = [...imageStore].sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
+      sorted.forEach(item => {
+        fetch(item.url).then(r => r.blob()).then(blob => {
+          session.sendImage(blob, item.hash, item.isPinned, item.caption);
+        });
       });
-    });
+    }
   },
   (count: number) => {
     peerCountSpan.textContent = count.toString();
     discoveredCountSpan.textContent = network.sessions.size.toString();
+  },
+  (session: PeerSession, transferId: string) => { // Error Feedback
+    console.warn(`[Main] Transfer Error for ${transferId} from ${session.peerId}. Releasing slot.`);
+    releaseDownloadSlot();
+  },
+  (peerId: string, hashes: string[]) => { // Inventory Callback
+    hashes.forEach(hash => {
+      if (!holderMap.has(hash)) holderMap.set(hash, new Set());
+      holderMap.get(hash)!.add(peerId);
+      updateHolderUI(hash);
+    });
+  },
+  (session: PeerSession, data: any) => { // Offer File Callback
+    downloadQueue.push({ session, transferId: data.transferId, meta: data });
+    processDownloadQueue();
   }
 );
 
 // Burn Callback Removed (Sakoku Policy)
-
-network.setInventoryCallback((peerId, hashes) => {
-  hashes.forEach(hash => {
-    if (!holderMap.has(hash)) holderMap.set(hash, new Set());
-    holderMap.get(hash)!.add(peerId);
-    updateHolderUI(hash);
-  });
-});
-
-network.setOfferFileCallback((session, data) => {
-  downloadQueue.push({ session, transferId: data.transferId, meta: data });
-  processDownloadQueue();
-});
 
 // Event Handlers for UI (Tickers, Buttons)
 tickerPauseBtn.onclick = () => {
@@ -842,19 +845,19 @@ if (idBurnBtn) {
     // Secure ICE Config Fetch
     let iceServers;
     if (window.location.hostname !== 'localhost') {
-        try {
-            console.log("Fetching Ephemeral ICE Credentials...");
-            const res = await fetch('/api/ice-config');
-            if (res.ok) {
-                const config = await res.json();
-                iceServers = config.iceServers;
-                console.log("[ICE] Secured Ephemeral Credentials.");
-            } else {
-                console.warn("[ICE] Failed to fetch credentials. Fallback to default.");
-            }
-        } catch (e) {
-             console.warn("[ICE] API unavailable. Fallback to default.", e);
+      try {
+        console.log("Fetching Ephemeral ICE Credentials...");
+        const res = await fetch('/api/ice-config');
+        if (res.ok) {
+          const config = await res.json();
+          iceServers = config.iceServers;
+          console.log("[ICE] Secured Ephemeral Credentials.");
+        } else {
+          console.warn("[ICE] Failed to fetch credentials. Fallback to default.");
         }
+      } catch (e) {
+        console.warn("[ICE] API unavailable. Fallback to default.", e);
+      }
     }
 
     const initPromise = network.init({ iceServers });

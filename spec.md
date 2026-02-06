@@ -1,12 +1,12 @@
-# moli-p2p Specification (Master v1.5)
+# moli-p2p Specification (Master v1.7.7)
 
-> **Version:** 1.5
-> **Codename:** "Sovereign Light"
-> **Focus:** Honorable Receipts, Signaling Stability, User Onboarding
+> **Version:** 1.7.7
+> **Codename:** "Sovereign Resilience"
+> **Focus:** Security Hardening, DoS Protection, Client Resilience
 > **Environment:** 
 >    - **Production**: `https://moli-green.is` (VPS / x86_64) - Node.js Gateway (Integrated Signaling).
 >    - **Development**: Localhost / Raspberry Pi Zero 2.
-> **Last Updated:** 2026-02-02 (v1.5 Release)
+> **Last Updated:** 2026-02-06 (v1.7.7 Release)
 
 ## 1. プロジェクト概要
 

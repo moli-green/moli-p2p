@@ -56,6 +56,7 @@ export class PeerSession {
     private isSending = false;
     private currentOfferedTransferId: string | null = null;
     private pullResolver: (() => void) | null = null;
+    private transferTimeout: any = null; // Timeout Handle
 
     // ICE Buffering
     private candidateQueue: RTCIceCandidateInit[] = [];
@@ -68,6 +69,7 @@ export class PeerSession {
         private identity: PeerIdentity,
         private sendSignal: (msg: SignalMessage) => void,
         private onImage: (blob: Blob, peerId: string, isPinned?: boolean, publicKey?: string, name?: string, tributeTag?: string, receipt?: any, ttl?: number) => void,
+        private onTransferError: (transferId: string) => void, // NEW: Error Feedback
         private network: { canReceiveFrom: (peerId: string) => boolean },
         private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
         realPeerId?: string, // Deterministic Cryptographic ID
@@ -248,12 +250,14 @@ export class PeerSession {
                     if (msg.size > MAX_FILE_SIZE) {
                         console.error(`[${this.myId}] SECURITY ALERT: Rejected meta for ${msg.name} (declared ${msg.size} > ${MAX_FILE_SIZE})`);
                         this.currentMeta = null;
+                        this.onTransferError(msg.transferId || 'unknown'); // NOTIFY
                         return;
                     }
 
                     // 1. Rate Limiting (10-min cooldown)
                     if (!this.network.canReceiveFrom(this.peerId)) {
                         this.currentMeta = null;
+                        this.onTransferError(msg.transferId || 'unknown'); // NOTIFY
                         return;
                     }
 
@@ -271,33 +275,42 @@ export class PeerSession {
                             if (!isValid) {
                                 console.error(`[${this.myId}] CRYPTO ALERT: Invalid signature from ${this.peerId} for ${msg.name}`);
                                 this.currentMeta = null;
+                                this.onTransferError(msg.transferId || 'unknown'); // NOTIFY
                                 return;
                             }
                             console.log(`[${this.myId}] Identity Verified (Age: ${Math.floor(identityAge / 3600000)}h): ${msg.name} Pinned: ${msg.isPinned}`);
                         } catch (err) {
                             console.error(`[${this.myId}] Crypto error during verification:`, err);
                             this.currentMeta = null;
+                            this.onTransferError(msg.transferId || 'unknown'); // NOTIFY
                             return;
                         }
                     } else {
                         console.warn(`[${this.myId}] Unsigned or un-dated metadata received from ${this.peerId} (v12.0 requirement missing)`);
                         this.currentMeta = null;
+                        this.onTransferError(msg.transferId || 'unknown'); // NOTIFY
                         return;
                     }
 
                     // Safety check: if already receiving, previous one was interrupted
                     if (this.currentMeta && this.receivedSize < this.currentMeta.size) {
                         console.error(`[${this.myId}] INTERRUPTED: Received new meta while ${this.currentMeta.name} was incomplete (${this.receivedSize}/${this.currentMeta.size})`);
+                        this.onTransferError(this.currentMeta.transferId); // NOTIFY OLD
                     }
 
                     console.log(`[${this.myId}] Starting Receive: ${msg.name} (${msg.size} bytes)`);
                     this.currentMeta = msg;
                     this.receivedBuffers = [];
                     this.receivedSize = 0;
+                    this.startTransferTimeout(); // START TIMER
                 } else if (msg.type === 'offer-file') {
                     // Physical Defense: Offer Size Guard
                     if (msg.size > MAX_FILE_SIZE) {
                         console.warn(`[${this.myId}] Ignoring oversized file offer: ${msg.name} (${msg.size} bytes)`);
+                        // Note: offer-file doesn't consume a slot yet in the new Pull model (?)
+                        // Actually it does NOT consume a slot until Pull Request is sent.
+                        // But if we reject here, we should probably ignore it silently or notify if logic demanded.
+                        // For now, silent ignore is fine as no slot is held.
                         return;
                     }
                     console.log(`[${this.myId}] Received FILE OFFER from ${this.peerId}: ${msg.name} Pinned: ${msg.isPinned}`);
@@ -322,6 +335,10 @@ export class PeerSession {
                 }
             } catch (e) {
                 console.error(`[${this.myId}] Error handling data message from ${this.peerId}:`, e, data);
+                if (this.currentMeta) { // If error occurs during parsing while active
+                    this.onTransferError(this.currentMeta.transferId);
+                    this.currentMeta = null;
+                }
             }
             return;
         }
@@ -330,15 +347,15 @@ export class PeerSession {
         if (data instanceof ArrayBuffer && this.currentMeta) {
             this.receivedBuffers.push(data);
             this.receivedSize += data.byteLength;
+            this.startTransferTimeout(); // RESET TIMER (keep alive)
 
             // Physical Defense: Chunk Overflow Protection
             // DeclaredSize + 16KB (slack) OR Global Hard Limit
             const overflowLimit = Math.min(this.currentMeta.size + 16384, MAX_FILE_SIZE + 16384);
             if (this.receivedSize > overflowLimit) {
                 console.error(`[${this.myId}] SECURITY ALERT: Chunk overflow detected for ${this.currentMeta.name}. Aborting transfer. (Received ${this.receivedSize} > Limit ${overflowLimit})`);
-                this.currentMeta = null;
-                this.receivedBuffers = [];
-                this.receivedSize = 0;
+                this.onTransferError(this.currentMeta.transferId); // NOTIFY
+                this.cleanupTransfer();
                 return;
             }
 
@@ -349,6 +366,7 @@ export class PeerSession {
 
             if (this.receivedSize >= this.currentMeta.size) {
                 console.log(`[${this.myId}] File Receive Complete! ${this.receivedSize} bytes. TTL: ${this.currentMeta.ttl}`);
+                this.stopTransferTimeout(); // STOP TIMER
 
                 // SECURITY: Integrity Check (Hash-on-Receive)
                 // Prevent Bait-and-Switch attacks by relays
@@ -361,9 +379,8 @@ export class PeerSession {
                 if (computedHash !== this.currentMeta.hash) {
                     console.error(`[${this.myId}] SECURITY ALERT: Hash Mismatch! Declared: ${this.currentMeta.hash}, Computed: ${computedHash}. Discarding data.`);
                     // We DO NOT call onImage. The data is compromised or corrupted.
-                    this.currentMeta = null;
-                    this.receivedBuffers = [];
-                    this.receivedSize = 0;
+                    this.onTransferError(this.currentMeta.transferId); // NOTIFY
+                    this.cleanupTransfer();
                     return;
                 }
 
@@ -371,9 +388,7 @@ export class PeerSession {
                 this.onImage(blob, this.peerId, this.currentMeta.isPinned, this.currentMeta.publicKey, this.currentMeta.name, this.currentMeta.tributeTag, this.currentMeta.receipt, this.currentMeta.ttl);
 
                 // Reset
-                this.currentMeta = null;
-                this.receivedBuffers = [];
-                this.receivedSize = 0;
+                this.cleanupTransfer();
             }
         }
     }
@@ -519,4 +534,29 @@ export class PeerSession {
 
     // Burn Signal removed (Sakoku Policy)
     // public sendBurnSignal(...) {}
+
+    private startTransferTimeout() {
+        this.stopTransferTimeout();
+        this.transferTimeout = setTimeout(() => {
+            console.error(`[${this.myId}] Transfer TIMEOUT for ${this.currentMeta?.name}. Aborting.`);
+            if (this.currentMeta) {
+                this.onTransferError(this.currentMeta.transferId);
+            }
+            this.cleanupTransfer();
+        }, 30000); // 30 seconds stall limit
+    }
+
+    private stopTransferTimeout() {
+        if (this.transferTimeout) {
+            clearTimeout(this.transferTimeout);
+            this.transferTimeout = null;
+        }
+    }
+
+    private cleanupTransfer() {
+        this.stopTransferTimeout();
+        this.currentMeta = null;
+        this.receivedBuffers = [];
+        this.receivedSize = 0;
+    }
 }
