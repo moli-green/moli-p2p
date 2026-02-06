@@ -13,7 +13,25 @@ use sha1::Sha1;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// Constants
+const ROOM_CAPACITY: usize = 100; // Production Limit
 const TURN_TTL: u64 = 3600; // 1 Hour
+
+struct BroadcastMsg {
+    sender_id: String,
+    payload: String,
+}
+
+struct Room {
+    id: String,
+    tx: broadcast::Sender<Arc<BroadcastMsg>>,
+    count: Arc<AtomicUsize>,
+}
+
+#[derive(Clone)]
+struct AppState {
+    rooms: Arc<RwLock<Vec<Room>>>,
+}
 
 #[derive(serde::Serialize)]
 struct IceConfig {
@@ -26,8 +44,6 @@ struct IceServer {
     username: String,
     credential: String,
 }
-
-// ... (existing main)
 
 #[tokio::main]
 async fn main() {
@@ -74,8 +90,6 @@ async fn get_ice_config() -> axum::Json<IceConfig> {
         ]
     })
 }
-
-// ... (rest of file)
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -151,7 +165,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
     // 3. Cleanup
     // Decrement count
-    let prev = count_ref.fetch_sub(1, Ordering::Relaxed);
+    let _prev = count_ref.fetch_sub(1, Ordering::Relaxed);
     // println!("User {} left Room {}. (Count -> {})", my_id, room_id, prev - 1);
 
     // Send Leave Msg (To Room Only)
@@ -160,8 +174,4 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         payload: format!("{{\"type\": \"leave\", \"senderId\": \"{}\"}}", my_id),
     });
     let _ = tx.send(leave_msg);
-    
-    // Optional: Prune empty rooms? 
-    // Complexity: High (Need to lock Global State inside async task). 
-    // Decision: Lazy. Let them persist. They are just structs with channels. Overhead is low.
 }
