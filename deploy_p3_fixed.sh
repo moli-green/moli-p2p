@@ -28,8 +28,16 @@ if [ -d "$APP_DIR/server" ]; then
     
     cargo build --release
     
-    # Reload Service
-    sudo systemctl restart moli-p2p
+    # INSTALL BINARY to Service Location
+    echo ">>> Stopping service to release binary lock..."
+    sudo systemctl stop moli-p2p
+    
+    echo ">>> Installing binary to /home/moli/moli-p2p/server_bin/..."
+    mkdir -p /home/moli/moli-p2p/server_bin
+    cp target/release/server /home/moli/moli-p2p/server_bin/server
+    
+    # Start Service
+    sudo systemctl start moli-p2p
 else
     echo "ERROR: Server directory not found at $APP_DIR/server"
     exit 1
@@ -41,20 +49,57 @@ if [ -d "$APP_DIR/client" ]; then
     cd "$APP_DIR/client"
     npm install
 
-    # Inject TURN Config (Robust Method)
-    echo ">>> Injecting Production Config..."
-    TARGET="src/main.ts"
+    # --- SECURE TURN CONFIGURATION ---
+    echo ">>> Configuring Secure TURN (Ephemeral Auth)..."
     
-    # We assume 'main.ts' is clean (restored via rsync before this script runs)
+    # Generate Secret if not exists (or just rotate it for this transition)
+    # For simplicity and security, we will generate a stable random secret for this host if missing
+    SECRET_FILE="/home/moli/moli-p2p/turn_secret"
+    if [ ! -f "$SECRET_FILE" ]; then
+        openssl rand -hex 32 > "$SECRET_FILE"
+        chmod 600 "$SECRET_FILE"
+    fi
+    TURN_SECRET=$(cat "$SECRET_FILE")
     
-    # replace "await network.init();" with "// await network.init();"
-    # But only the last one? Or specific line.
-    # The default one is preceded by "// Default (Google STUN only)"
+    # Update Coturn Config
+    # Check if 'use-auth-secret' is enabled, if not, re-write config
+    if ! grep -q "use-auth-secret" /etc/turnserver.conf; then
+        echo ">>> Updating /etc/turnserver.conf to use Shared Secret..."
+        PUBLIC_IP=$(curl -s ifconfig.me)
+        sudo tee /etc/turnserver.conf > /dev/null <<EOF
+listening-port=3478
+tls-listening-port=5349
+fingerprint
+lt-cred-mech
+use-auth-secret
+static-auth-secret=$TURN_SECRET
+realm=moli-green.is
+total-quota=100
+stale-nonce
+log-file=/var/log/turnserver.log
+external-ip=$PUBLIC_IP
+no-cli
+EOF
+        sudo systemctl restart coturn
+        echo ">>> Coturn Restarted."
+    fi
+
+    # Update Service Environment (Pass Secret to Rust Server)
+    # We use a drop-in override or just edit the service file if we are lazy (we own it)
+    # Let's replace the Environment line in systemd service
+    # Assuming standard location /etc/systemd/system/moli-p2p.service
     
-    # Replace "const initPromise = network.init();" with the production init
-    INJECT="const iceServers = [{ urls: 'turn:$DOMAIN:3478', username: '$TURN_USER', credential: '$TURN_PASS' }, { urls: 'stun:stun.l.google.com:19302' }]; const initPromise = network.init({ iceServers });"
-    
-    sed -i "s|const initPromise = network.init();|$INJECT|" "$TARGET"
+    # Check if TURN_SECRET is already in service
+    if ! grep -q "TURN_SECRET" /etc/systemd/system/moli-p2p.service; then
+        echo ">>> Adding TURN_SECRET to moli-p2p.service..."
+        # Replace Environment=RUST_LOG=info with Environment="RUST_LOG=info TURN_SECRET=$TURN_SECRET"
+        # Or just append
+        sudo sed -i "s|Environment=RUST_LOG=info|Environment=RUST_LOG=info\nEnvironment=TURN_SECRET=$TURN_SECRET|" /etc/systemd/system/moli-p2p.service
+        sudo systemctl daemon-reload
+    fi
+     
+    # Remove Client Injection (No longer needed, Client fetches from API)
+    # echo ">>> Injecting Production Config..." -> SKIPPED
 
     npm run build
 else

@@ -839,7 +839,25 @@ if (idBurnBtn) {
 
 (async () => {
   try {
-    const initPromise = network.init();
+    // Secure ICE Config Fetch
+    let iceServers;
+    if (window.location.hostname !== 'localhost') {
+        try {
+            console.log("Fetching Ephemeral ICE Credentials...");
+            const res = await fetch('/api/ice-config');
+            if (res.ok) {
+                const config = await res.json();
+                iceServers = config.iceServers;
+                console.log("[ICE] Secured Ephemeral Credentials.");
+            } else {
+                console.warn("[ICE] Failed to fetch credentials. Fallback to default.");
+            }
+        } catch (e) {
+             console.warn("[ICE] API unavailable. Fallback to default.", e);
+        }
+    }
+
+    const initPromise = network.init({ iceServers });
     // Use Constant
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("Network Initialization Timed Out")), NETWORK_TIMEOUT_MS)

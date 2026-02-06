@@ -8,25 +8,26 @@ use std::{net::SocketAddr, sync::{Arc, atomic::{AtomicUsize, Ordering}}};
 use tokio::sync::{broadcast, RwLock};
 use tower_http::services::ServeDir;
 use uuid::Uuid;
+use hmac::{Hmac, Mac};
+use sha1::Sha1;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-// Constants
-const ROOM_CAPACITY: usize = 100; // Production Limit
+const TURN_TTL: u64 = 3600; // 1 Hour
 
-struct BroadcastMsg {
-    sender_id: String,
-    payload: String,
+#[derive(serde::Serialize)]
+struct IceConfig {
+    iceServers: Vec<IceServer>,
 }
 
-struct Room {
-    id: String,
-    tx: broadcast::Sender<Arc<BroadcastMsg>>,
-    count: Arc<AtomicUsize>,
+#[derive(serde::Serialize)]
+struct IceServer {
+    urls: String,
+    username: String,
+    credential: String,
 }
 
-#[derive(Clone)]
-struct AppState {
-    rooms: Arc<RwLock<Vec<Room>>>,
-}
+// ... (existing main)
 
 #[tokio::main]
 async fn main() {
@@ -39,6 +40,7 @@ async fn main() {
     let app = Router::new()
         .nest_service("/", ServeDir::new("../client/dist")) // Serve static files
         .route("/ws", get(ws_handler))
+        .route("/api/ice-config", get(get_ice_config))
         .with_state(app_state);
 
     let addr = SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, 9090));
@@ -46,6 +48,34 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
+
+async fn get_ice_config() -> axum::Json<IceConfig> {
+    let secret = std::env::var("TURN_SECRET").unwrap_or_else(|_| "dev_secret_local_only".to_string());
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + TURN_TTL;
+    let username = format!("{}:moli", timestamp);
+    
+    type HmacSha1 = Hmac<Sha1>;
+    let mut mac = HmacSha1::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
+    mac.update(username.as_bytes());
+    let credential = STANDARD.encode(mac.finalize().into_bytes());
+
+    axum::Json(IceConfig {
+        iceServers: vec![
+            IceServer {
+                urls: "turn:moli-green.is:3478".to_string(),
+                username,
+                credential,
+            },
+            IceServer {
+                urls: "stun:stun.l.google.com:19302".to_string(), // Fallback
+                username: "".to_string(),
+                credential: "".to_string(),
+            }
+        ]
+    })
+}
+
+// ... (rest of file)
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
