@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // Constants
 const ROOM_CAPACITY: usize = 100; // Production Limit
+const MAX_GLOBAL_CONNECTIONS: usize = 1000; // Circuit Breaker
 const TURN_TTL: u64 = 3600; // 1 Hour
 
 struct BroadcastMsg {
@@ -31,6 +32,7 @@ struct Room {
 #[derive(Clone)]
 struct AppState {
     rooms: Arc<RwLock<Vec<Room>>>,
+    conn_count: Arc<AtomicUsize>,
 }
 
 #[derive(serde::Serialize)]
@@ -48,9 +50,18 @@ struct IceServer {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+    
+    // Developer Convenience: Load .env if present (dev mode)
+    dotenv::dotenv().ok();
+
+    // SECURITY: Fail-safe Secret Enforcement
+    if std::env::var("TURN_SECRET").is_err() {
+        panic!("CRITICAL: TURN_SECRET environment variable is NOT set. Server cannot start securely.");
+    }
 
     let app_state = AppState {
         rooms: Arc::new(RwLock::new(Vec::new())),
+        conn_count: Arc::new(AtomicUsize::new(0)),
     };
 
     let app = Router::new()
@@ -66,7 +77,7 @@ async fn main() {
 }
 
 async fn get_ice_config() -> axum::Json<IceConfig> {
-    let secret = std::env::var("TURN_SECRET").unwrap_or_else(|_| "dev_secret_local_only".to_string());
+    let secret = std::env::var("TURN_SECRET").expect("TURN_SECRET must be set");
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + TURN_TTL;
     let username = format!("{}:moli", timestamp);
     
@@ -95,11 +106,19 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
+    // SECURITY: Global Connection Limit (Circuit Breaker)
+    if state.conn_count.load(Ordering::Relaxed) >= MAX_GLOBAL_CONNECTIONS {
+        return (axum::http::StatusCode::SERVICE_UNAVAILABLE, "Server Busy").into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
     let my_id = Uuid::new_v4().to_string();
+
+    // Increment Global Count
+    state.conn_count.fetch_add(1, Ordering::Relaxed);
 
     // 1. Assign Room
     let (tx, count_ref, room_id) = {
@@ -217,4 +236,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         payload: format!("{{\"type\": \"leave\", \"senderId\": \"{}\"}}", my_id),
     });
     let _ = tx.send(leave_msg);
+
+    // Decrement Global Count
+    state.conn_count.fetch_sub(1, Ordering::Relaxed);
 }

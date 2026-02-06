@@ -234,7 +234,33 @@ const originalError = console.error;
 console.log = (...args) => {
   originalLog(...args);
   // Info logs disabled on screen for performance
+  // logToScreen(...);
 };
+
+// ...
+
+function processTicker() {
+  if (tickerTimeout) clearTimeout(tickerTimeout);
+
+  if (!isPaused && renderQueue.length > 0) {
+    const nextItem = renderQueue.shift()!;
+
+    // FIX: Check if item is still in imageStore before appending. (Ghost Image Fix)
+    const exists = imageStore.some(i => i.id === nextItem.id);
+    if (!exists) {
+      console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
+      tickerTimeout = setTimeout(processTicker, 0); // Recursive call to process next immediately
+      updateBufferUI();
+      return;
+    }
+
+    gallery.appendChild(nextItem.element);
+    updateDecayUI();
+    updateBufferUI();
+  }
+
+  tickerTimeout = setTimeout(processTicker, renderInterval);
+}
 console.warn = (...args) => {
   originalWarn(...args);
   logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#ff0');
@@ -361,27 +387,6 @@ function updateHolderUI(hash: string) {
   }
 }
 
-function processTicker() {
-  if (tickerTimeout) clearTimeout(tickerTimeout);
-
-  if (!isPaused && renderQueue.length > 0) {
-    const nextItem = renderQueue.shift()!;
-
-    // FIX: Check if item is still in imageStore before appending.
-    if (imageStore.some(i => i.id === nextItem.id)) {
-      gallery.appendChild(nextItem.element);
-      updateDecayUI();
-    } else {
-      console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
-      tickerTimeout = setTimeout(processTicker, 0);
-      updateBufferUI();
-      return;
-    }
-    updateBufferUI();
-  }
-
-  tickerTimeout = setTimeout(processTicker, renderInterval);
-}
 
 function checkEviction() {
   if (imageStore.length <= MAX_GALLERY_ITEMS) return;

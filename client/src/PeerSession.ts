@@ -63,6 +63,9 @@ export class PeerSession {
     private incomingQueue: MessageEvent[] = [];
     private isProcessingIncoming = false;
 
+    // State for Pull Enforcement
+    private pendingPullRequests = new Set<string>();
+
     constructor(
         private myId: string, // SessionID
         private _peerId: string, // SessionID
@@ -121,6 +124,7 @@ export class PeerSession {
             this.setupDataChannel(channel);
         };
     }
+
 
     // ★ Unidirectional Logic: Only the smaller Signaling ID initiates
     public async start() {
@@ -246,6 +250,14 @@ export class PeerSession {
             try {
                 const msg = JSON.parse(data);
                 if (msg.type === 'meta') {
+                    // SECURITY: Enforce "Pull" Semantics
+                    // Block unrequested transfers to prevent DoS (Flood)
+                    if (!this.pendingPullRequests.has(msg.transferId)) {
+                        console.warn(`[${this.myId}] SECURITY ALERT: Blocked unrequested transfer: ${msg.transferId} (Pull Enforcement)`);
+                        return;
+                    }
+                    this.pendingPullRequests.delete(msg.transferId); // Consume the token
+
                     // Physical Defense: Metadata Size Guard
                     if (msg.size > MAX_FILE_SIZE) {
                         console.error(`[${this.myId}] SECURITY ALERT: Rejected meta for ${msg.name} (declared ${msg.size} > ${MAX_FILE_SIZE})`);
@@ -528,6 +540,7 @@ export class PeerSession {
     public pullFile(transferId: string) {
         if (this.dc && this.dc.readyState === 'open') {
             console.log(`[${this.myId}] Sending PULL REQUEST for ${transferId} to ${this.peerId}`);
+            this.pendingPullRequests.add(transferId); // Register expectation
             this.dc.send(JSON.stringify({ type: 'pull-request', transferId }));
         }
     }
