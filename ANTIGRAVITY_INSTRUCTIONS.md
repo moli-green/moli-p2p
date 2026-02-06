@@ -1,83 +1,60 @@
-# Instructions for Antigravity
+# Security Hardening Instructions
 
-## Task: Fix Client-Side Resource Starvation (DoS) Vulnerability
+**Role:** You are Antigravity, the Lead Developer.
+**Task:** Fix confirmed security vulnerabilities in the Client and Server.
 
-### Context
-A security audit revealed a **Resource Starvation** vulnerability in the client. If a file transfer fails (due to hash mismatch, size overflow, or malicious stalling), the `downloadSlot` reserved in `main.ts` is never released.
-Since `MAX_CONCURRENT_DOWNLOADS` is small (default 3), a few failed transfers can permanently block all future downloads, effectively causing a Denial of Service.
+## 🚨 CRITICAL META-INSTRUCTION
+**"Think for yourself."**
+Do not blindly follow these instructions. Review the proposed changes critically. If you identify logical flaws, race conditions, or better implementation strategies, you have the authority to deviate and improve the solution. Your goal is a secure and robust system, not compliance.
 
-### Objective
-Ensure that download slots are **always released**, even when a transfer fails or times out.
+---
 
-### Required Changes
+## 1. Client-Side: Enforce "Pull" Semantics
+**File:** `client/src/PeerSession.ts`
 
-#### 1. Modify `client/src/types.ts` (Optional but recommended)
-Define the error event structure if you use shared types, or just define it inline in `PeerSession.ts`.
+**Vulnerability:**
+The current `handleDataMessage` accepts `type: 'meta'` messages even if the client never requested the file. This allows a malicious peer to flood the victim with unrequested large files (DoS).
 
-#### 2. Modify `client/src/PeerSession.ts`
+**Action:**
+Strictly enforce the "Pull" handshake state.
 
-**A. Add 'transfer-error' to Session Events**
-Update the `onSessionEvent` callback signature to include a new event type: `'transfer-error'`.
+1.  **Track Requests:** Add a state variable (e.g., `pendingPullRequests: Set<string>`) to track `transferId`s that this client has explicitly requested via `pullFile`.
+2.  **Verify Incoming Meta:** In `handleDataMessage`, when a `'meta'` message arrives:
+    *   Check if `msg.transferId` exists in `pendingPullRequests`.
+    *   If **NOT found**: Log a security warning (e.g., "Blocking unrequested transfer") and **ignore** the message. Do not set `currentMeta`.
+    *   If **found**: Remove the ID from the set and proceed with the transfer.
+3.  **Clean Up:** Ensure `pendingPullRequests` does not leak memory (e.g., remove ID on timeout or error if feasible, though the strict check on arrival is the priority).
 
-**B. Implement Error Reporting**
-In `handleDataMessage`, wherever an error causes an early return (and thus prevents `onImage` from being called), you must now trigger the error event.
+---
 
-*   **Hash Mismatch**:
-    ```typescript
-    if (computedHash !== this.currentMeta.hash) {
-        console.error(...);
-        this.onSessionEvent?.('transfer-error', this, { transferId: this.currentMeta.transferId }); // <--- ADD THIS
-        this.currentMeta = null;
-        // ...
-        return;
-    }
-    ```
-*   **Size Overflow / Invalid Metadata**:
-    Trigger the error event similarly.
+## 2. Server-Side: Global Connection Limit
+**File:** `server/src/main.rs`
 
-**C. Implement Receive Timeout**
-Add a timeout mechanism to detect stalled transfers.
-*   When receiving `type: 'meta'`, start a timeout (e.g., 30 seconds).
-*   Reset the timeout every time a data chunk is received.
-*   If the timeout triggers, clear the state and fire `'transfer-error'`.
+**Vulnerability:**
+The server limits users per *room* but lacks a *global* connection limit. A flood of connections can exhaust file descriptors or RAM on the Raspberry Pi.
 
-#### 3. Modify `client/src/P2PNetwork.ts`
+**Action:**
+Implement a global "Circuit Breaker".
 
-**A. Handle the New Event**
-Update `handleSessionEvent` to handle `'transfer-error'`.
+1.  **Global Counter:** Add a global atomic counter (e.g., `conn_count: Arc<AtomicUsize>`) to `AppState`.
+2.  **Config:** Define a hard limit (e.g., `const MAX_GLOBAL_CONNECTIONS: usize = 1000;`).
+3.  **Enforcement:**
+    *   In `ws_handler` (before upgrading) or at the very start of `handle_socket`:
+    *   Check if `current_count >= MAX_GLOBAL_CONNECTIONS`.
+    *   If exceeded: Return a `503 Service Unavailable` (if in handler) or immediately close the socket (if in upgrade).
+    *   Increment the counter on successful connection.
+    *   Decrement the counter when the socket handler finishes (ensure this happens even on panic/error).
 
-**B. Expose Callback**
-Add a new public method `setTransferErrorCallback` (similar to `setOfferFileCallback`) so `main.ts` can listen for these errors.
+---
 
-```typescript
-// Example
-private onTransferError?: (session: PeerSession, transferId: string) => void;
+## 3. Server-Side: Secure Secrets
+**File:** `server/src/main.rs`
 
-public setTransferErrorCallback(cb: (session: PeerSession, transferId: string) => void) {
-    this.onTransferError = cb;
-}
+**Vulnerability:**
+`TURN_SECRET` defaults to a hardcoded string `"dev_secret_local_only"`. If a user forgets to set this env var in production, the server is insecure.
 
-// In handleSessionEvent:
-if (type === 'transfer-error') {
-    this.onTransferError?.(session, data.transferId);
-}
-```
+**Action:**
+Fail safe.
 
-#### 4. Modify `client/src/main.ts`
-
-**A. Listen for Errors**
-Register the callback using `network.setTransferErrorCallback`.
-
-**B. Release Slot**
-Inside the callback, verify if the `transferId` matches an active download in `downloadQueue` (or just unconditionally call release).
-**Crucially, call `releaseDownloadSlot()`**.
-
-```typescript
-network.setTransferErrorCallback((session, transferId) => {
-    console.warn(`[Main] Transfer failed: ${transferId}. Releasing slot.`);
-    releaseDownloadSlot();
-});
-```
-
-### Verification
-After implementing these changes, simulated transfer failures (e.g., by modifying the sender to send wrong hashes) should NOT stop subsequent downloads.
+1.  **Require Env Var:** Change the logic to **panic** or exit if `TURN_SECRET` is not set.
+2.  **Dev Mode Exception (Optional):** If you really need a fallback for local dev, make it explicit (e.g., only if `APP_ENV != production`), but strictly speaking, requiring the secret is safer. **Panic is preferred for this task.**
