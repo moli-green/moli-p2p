@@ -9,6 +9,8 @@
 - **No More Restrictions**: Abolished all age-based limits ("Infant" logic).
 - **Sovereign Reset**: New Glassmorphism-style "Danger Modal" for secure identity destruction.
 - **Sakoku Policy (Isolation)**: "Burn" actions are now strictly local ("My Computer, My Castle"). Burning removes content from your view but does not broadcast signals to others, preventing abuse.
+- **IPv6 Dual-Stack**: Native support for modern mobile networks, listening on both IPv4 and IPv6 (`[::]:9090`).
+- **Ephemeral Authentication**: Security hardening for the signaling layer. TURN credentials are now time-limited and cryptographically signed (HMAC-SHA1), eliminating hardcoded secrets from the codebase.
 
 ## Philosophy
 
@@ -48,3 +50,8 @@ That's it.
 This license ensures that if you run a modified version of this service accessible over a network, you must release the source code. This protects the project from being enclosed by proprietary cloud services.
 
 See [LICENSE](./LICENSE) for details.
+
+## Documentation
+
+- [Deployment Guide](./deployment.md): Detailed production setup (VPS, SSL, TURN).
+- [Specification](./spec.md): Technical architecture and protocol details.
