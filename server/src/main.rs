@@ -42,6 +42,7 @@ async fn main() {
         .with_state(app_state);
 
     let addr = SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, 9090));
+    println!("MOLI SERVER: ATTEMPTING IPV6 BINDING...");
     println!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
