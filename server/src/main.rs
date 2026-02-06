@@ -137,14 +137,40 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
 
     let mut rx = tx.subscribe();
 
+    // 3. Send Identity (Security Hardening: Server Authority)
+    let identity_msg = format!("{{\"type\": \"identity\", \"senderId\": \"{}\"}}", my_id);
+    if socket.send(Message::Text(identity_msg)).await.is_err() {
+        return;
+    }
+
     // 2. Event Loop
     loop {
         tokio::select! {
             Some(msg) = socket.recv() => {
                 if let Ok(Message::Text(text)) = msg {
+                     // 1. DoS Protection: Size Limit
+                    if text.len() > 16 * 1024 { // 16KB Limit
+                        // println!("Warn: User {} sent too large message ({} bytes). Dropping.", my_id, text.len());
+                        continue;
+                    }
+
+                    // 2. Identity Spoofing Protection: Force senderId
+                    // We parse the message, inject the TRUE senderId, and re-serialize.
+                    let mut json_msg: serde_json::Value = match serde_json::from_str(&text) {
+                        Ok(v) => v,
+                        Err(_) => continue, // Drop invalid JSON
+                    };
+
+                    if let Some(obj) = json_msg.as_object_mut() {
+                        // FORCE OVERWRITE invalid or missing senderId
+                        obj.insert("senderId".to_string(), serde_json::Value::String(my_id.clone()));
+                    }
+
+                    let safe_payload = json_msg.to_string();
+
                     let msg = Arc::new(BroadcastMsg {
                         sender_id: my_id.clone(),
-                        payload: text,
+                        payload: safe_payload,
                     });
                     // Broadcast ONLY to this room
                     let _ = tx.send(msg);

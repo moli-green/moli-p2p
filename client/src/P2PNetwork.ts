@@ -68,41 +68,67 @@ export class P2PNetwork {
         return btoa(String.fromCharCode(...new Uint8Array(this.identity.publicKeySpki)));
     }
 
-    public async init(config?: { iceServers?: RTCIceServer[] }) {
+    public async init(config?: { iceServers?: RTCIceServer[] }): Promise<void> {
         this.activeIceServers = config?.iceServers;
-        this.myId = await this.identity.init();
+        // Pre-load locally (legacy/fallback)
+        await this.identity.init();
 
-        // Connect to Server
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname === 'localhost' ? 'localhost:9090' : window.location.host;
-        const path = window.location.hostname === 'localhost' ? '/ws' : '/api/ws';
+        return new Promise((resolve, reject) => {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.hostname === 'localhost' ? 'localhost:9090' : window.location.host;
+            const path = window.location.hostname === 'localhost' ? '/ws' : '/api/ws';
 
-        console.log(`[P2P] Connecting to Signaling Server: ${protocol}//${host}${path}`);
-        this.ws = new WebSocket(`${protocol}//${host}${path}`);
+            console.log(`[P2P] Connecting to Signaling Server: ${protocol}//${host}${path}`);
+            this.ws = new WebSocket(`${protocol}//${host}${path}`);
 
-        this.ws.onopen = () => {
-            console.log('WS Connected. Session ID:', this.sessionId, 'Peer ID:', this.myId);
-            this.broadcastJoin();
-            setInterval(() => {
-                this.broadcastJoin();
-            }, 10000);
-        };
+            // Safety Timeout
+            const timeout = setTimeout(() => {
+                reject(new Error("Signaling Handshake Timed Out"));
+            }, 5000);
 
-        this.ws.onmessage = (event) => {
-            try {
-                const raw = JSON.parse(event.data);
-                const parsed = SignalSchema.safeParse(raw);
-                if (parsed.success) {
-                    this.handleSignal(parsed.data);
+            this.ws.onopen = () => {
+                console.log('WS Connected. Waiting for Identity...');
+            };
+
+            this.ws.onmessage = (event) => {
+                try {
+                    const raw = JSON.parse(event.data);
+
+                    // --- HANDSHAKE: Identity Assignment ---
+                    if (raw.type === 'identity') {
+                        console.log('[P2P] Server assigned Identity:', raw.senderId);
+                        this.myId = raw.senderId;
+                        this.sessionId = raw.senderId; // Sync SessionID with NetworkID for consistency
+
+                        clearTimeout(timeout);
+                        resolve(); // Ready to start
+
+                        // Start Broadcast Loop
+                        this.broadcastJoin();
+                        setInterval(() => {
+                            this.broadcastJoin();
+                        }, 10000);
+                        return;
+                    }
+                    // --------------------------------------
+
+                    const parsed = SignalSchema.safeParse(raw);
+                    if (parsed.success) {
+                        this.handleSignal(parsed.data);
+                    }
+                } catch (e) {
+                    console.error('WS Parse Error', e);
                 }
-            } catch (e) {
-                console.error('WS Parse Error', e);
-            }
-        };
+            };
 
-        window.addEventListener('beforeunload', () => {
-            this.broadcast({ type: 'leave', senderId: this.sessionId });
-            this.ws.close();
+            this.ws.onerror = (e) => {
+                console.error("WS Error", e);
+            };
+
+            window.addEventListener('beforeunload', () => {
+                this.broadcast({ type: 'leave', senderId: this.sessionId });
+                this.ws.close();
+            });
         });
     }
 
