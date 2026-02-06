@@ -39,6 +39,8 @@ That's it.
 - **Client**: `http://localhost` (or your server's IP)
 - **Signaling**: `http://localhost:9090` (Internal)
 
+> **Note**: This minimal Docker setup ensures the *application* runs, but for connectivity over the internet (NAT Traversal) or mobile 4G, you need a **TURN Server**. See [deployment.md](./deployment.md) for full production setup including Coturn.
+
 ## License
 
 **AGPLv3** (GNU Affero General Public License v3.0)

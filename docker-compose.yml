@@ -7,6 +7,7 @@ services:
       - "9090:9090"
     environment:
       - RUST_LOG=info
+      - TURN_SECRET=dev_secret_local_only # Change for production!
 
   client:
     build: ./client
