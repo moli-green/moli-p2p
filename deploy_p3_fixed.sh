@@ -127,6 +127,11 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
     }
+
+    location /api/ice-config {
+        proxy_pass http://localhost:9090/api/ice-config;
+        proxy_set_header Host \$host;
+    }
 }
 EOF
 
