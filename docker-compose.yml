@@ -7,7 +7,9 @@ services:
       - "9090:9090"
     environment:
       - RUST_LOG=info
-      - TURN_SECRET=dev_secret_local_only # Change for production!
+      # SECURITY: You MUST set TURN_SECRET in your .env file or environment.
+      # Do NOT use a default value here to prevent insecure production deployments.
+      - TURN_SECRET=${TURN_SECRET:?error: TURN_SECRET environment variable is required. Please create a .env file with a strong secret.}
 
   client:
     build: ./client

@@ -143,11 +143,28 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         return;
     }
 
+    // Rate Limit State
+    let mut rate_limit_counter = 0;
+    let mut rate_limit_start = std::time::Instant::now();
+    const RATE_LIMIT_MAX: usize = 10; // 10 messages per second
+    const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
+
     // 2. Event Loop
     loop {
         tokio::select! {
             Some(msg) = socket.recv() => {
                 if let Ok(Message::Text(text)) = msg {
+                     // 0. DoS Protection: Rate Limit
+                    if rate_limit_start.elapsed() >= RATE_LIMIT_WINDOW {
+                        rate_limit_counter = 0;
+                        rate_limit_start = std::time::Instant::now();
+                    }
+                    rate_limit_counter += 1;
+                    if rate_limit_counter > RATE_LIMIT_MAX {
+                         println!("Rate limit exceeded for {}. Disconnecting.", my_id);
+                         break;
+                    }
+
                      // 1. DoS Protection: Size Limit
                     if text.len() > 16 * 1024 { // 16KB Limit
                         // println!("Warn: User {} sent too large message ({} bytes). Dropping.", my_id, text.len());
