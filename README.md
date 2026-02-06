@@ -3,15 +3,18 @@
 > "Presence is Storage." - Use it or lose it. An autonomous, distributed image gallery that lives only as long as you watch it.
 
 ![Moli P2P Demo](./moli-p2p-hero.webp)
-*Live P2P Mesh Demo (v1.7.7 Sovereign Edition)*
+*Live P2P Mesh Demo (v1.7.9 Sovereign Edition)*: **[https://moli-green.is](https://moli-green.is)**
 
-## v1.7.7 Sovereign Update (Security Hardening)
+## v1.7.9 Sovereign Update (Deep Security Hardening)
+- **Deep Security**:
+    - **Pull Semantics**: Client strictly enforces "Pull" logic. Unrequested transfers are blocked at the WebRTC gate, preventing "Drive-by Download" attacks.
+    - **Global Circuit Breaker**: Server enforces a hard limit on concurrent connections (1000) to protect against resource exhaustion.
+    - **Strict Secret Enforcement**: Server refuses to boot without a secure `TURN_SECRET`, eliminating accidental insecure deployments.
 - **Client Resilience**: Fixed critical "Resource Starvation" DoS vulnerability. Implemented smart timeouts for stalled transfers and strict error feedback loops.
 - **Server Hardening**:
-    - **Identity Authority**: Server now assigns and enforces cryptographic identities, preventing spoofing.
-    - **DoS Protection**: Added Token Bucket rate limiting (10 msg/sec) and strict message size limits (16KB).
+    - **Identity Authority**: Server assigns and enforces cryptographic identities, preventing spoofing.
+    - **DoS Protection**: Token Bucket rate limiting (10 msg/sec) and strict message size limits (16KB).
     - **Secure Credentials**: Ephemeral TURN credentials signed with HMAC-SHA1 to prevent replay attacks.
-- **Docker Security**: Strict enforcement of `TURN_SECRET` environment variables to prevent insecure default deployments.
 - **Sovereign Reset**: New "Danger Modal" for secure identity destruction.
 - **Sakoku Policy**: "Burn" actions are strictly local ("My Computer, My Castle"), preventing moderation spam.
 
