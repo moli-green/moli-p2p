@@ -590,3 +590,29 @@ To maximize maintainability and focus on the core "Human-to-Human" experience, w
 ### D. Denial of Service (DoS) Protection
 - **Rule**: Max WebSocket Message Size = **16 KB**.
 - **Action**: Messages exceeding this limit are silently dropped by the server.
+
+## 19. Client Extension API (v1.7.9 - 2026-02-07)
+
+To support local automation, AI bots, and headless clients, the browser client exposes a global API.
+
+### `window.moliAPI`
+
+This object bridges the internal P2P logic to the browser console or external scripts (UserScripts/Extensions).
+
+#### Methods
+
+1.  **`connect()`**
+    -   Returns: `{ status: 'connected' | 'disconnected', id: string }`
+    -   Description: Verification of network status and current Peer ID.
+
+2.  **`upload(blob: Blob, name?: string)`**
+    -   Returns: `Promise<{ success: boolean; reason?: string }>`
+    -   Description: Injects a file into the local node, saves it to Vault, and broadcasts it to the mesh. This is legally equivalent to a user drag-and-drop action.
+
+3.  **`getLatestImages()`**
+    -   Returns: `Array<{ id: string, hash: string, caption?: string, timestamp: number }>`
+    -   Description: Returns the current in-memory gallery state (Sorted by arrival).
+
+4.  **`getImageContent(hash: string)`**
+    -   Returns: `Promise<string | null>` (DataURL Base64)
+    -   Description: Retrieves the full binary content of an image from the Blob URL store.
