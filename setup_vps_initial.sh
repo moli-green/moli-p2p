@@ -5,7 +5,7 @@ set -e
 DOMAIN="moli-green.is"
 EMAIL="moli@moli-green.is"
 TURN_USER="moli"
-TURN_PASS="honor_p2p_secret"
+# TURN_PASS is removed (using ephemeral auth)
 REALM="moli-green.is"
 REPO_URL="https://github.com/moli-green/moli-p2p.git"
 APP_DIR="/var/www/moli-p2p"
@@ -22,12 +22,22 @@ echo ">>> Configuring Coturn..."
 # Get Public IP
 PUBLIC_IP=$(curl -s ifconfig.me)
 
+# Generate Secure Secret
+SECRET_FILE="/home/moli/moli-p2p/turn_secret"
+mkdir -p /home/moli/moli-p2p
+if [ ! -f "$SECRET_FILE" ]; then
+    openssl rand -hex 32 > "$SECRET_FILE"
+    chmod 600 "$SECRET_FILE"
+fi
+TURN_SECRET=$(cat "$SECRET_FILE")
+
 sudo tee /etc/turnserver.conf > /dev/null <<EOF
 listening-port=3478
 tls-listening-port=5349
 fingerprint
 lt-cred-mech
-user=$TURN_USER:$TURN_PASS
+use-auth-secret
+static-auth-secret=$TURN_SECRET
 realm=$REALM
 total-quota=100
 stale-nonce
