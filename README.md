@@ -4,6 +4,7 @@
 
 ![Moli P2P Demo](./moli-p2p-hero.webp)
 *Live P2P Mesh Demo (v1.7.9 Sovereign Edition)*: **[https://moli-green.is](https://moli-green.is)**
+*User Manual (The Handbook)*: **[USER_MANUAL.md](./USER_MANUAL.md)**
 
 ## v1.7.9 Sovereign Update (Deep Security Hardening)
 - **Deep Security**:
