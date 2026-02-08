@@ -1,60 +1,56 @@
-# Security Hardening Instructions
+# Instructions for Antigravity
 
-**Role:** You are Antigravity, the Lead Developer.
-**Task:** Fix confirmed security vulnerabilities in the Client and Server.
+## Task: Server Security Hardening & Cleanup
 
-## 🚨 CRITICAL META-INSTRUCTION
-**"Think for yourself."**
-Do not blindly follow these instructions. Review the proposed changes critically. If you identify logical flaws, race conditions, or better implementation strategies, you have the authority to deviate and improve the solution. Your goal is a secure and robust system, not compliance.
+Please implement the following changes in `server/src/main.rs` and `server/Dockerfile` to address security vulnerabilities and stability issues.
 
----
+### 1. Room Cleanup Mechanism (Memory Leak Prevention)
+The current implementation allows rooms to persist indefinitely even after all users have left.
+*   **Action**: In `handle_socket` (at the end of the function, after `tx.send(leave_msg)`):
+    *   Acquire a write lock on `state.rooms`.
+    *   Check if the current room's `count` is 0.
+    *   If `count` is 0, remove the room from the `rooms` vector.
+    *   **Hint**: Use `retain` or find index and `remove`. Be careful not to remove a room that just got a new user (check `count` inside the lock).
 
-## 1. Client-Side: Enforce "Pull" Semantics
-**File:** `client/src/PeerSession.ts`
+### 2. IP Connection Limiting (DoS Protection)
+Single IP addresses can currently exhaust the server's global connection limit.
+*   **Action**:
+    *   Add a new field `ip_counts: Arc<RwLock<std::collections::HashMap<std::net::IpAddr, usize>>>` to `AppState`.
+    *   Initialize this map in `main`.
+    *   In `ws_handler`:
+        *   Extract the client's IP address (use `axum::extract::ConnectInfo<SocketAddr>`).
+        *   Check the current connection count for this IP in `state.ip_counts`.
+        *   If the count exceeds `10`, return `(StatusCode::TOO_MANY_REQUESTS, "Rate Limit Exceeded").into_response()`.
+        *   If allowed, increment the count for this IP.
+    *   **Crucial**: Ensure the IP count is decremented when the WebSocket connection closes.
+        *   **Implementation Suggestion**: Create a helper struct (e.g., `ConnectionGuard`) that holds the IP and the `state.ip_counts` reference. Implement `Drop` for this struct to automatically decrement the count.
+        *   Pass this guard (or move it) into `handle_socket` so it lives as long as the connection.
 
-**Vulnerability:**
-The current `handleDataMessage` accepts `type: 'meta'` messages even if the client never requested the file. This allows a malicious peer to flood the victim with unrequested large files (DoS).
+### 3. Strict Message Size Limit (Resource Exhaustion)
+Currently, `socket.recv()` might buffer large messages before our manual check.
+*   **Action**:
+    *   In `ws_handler`, configure the `WebSocketUpgrade` instance to enforce limits *before* upgrading.
+    *   Use `.max_frame_size(16 * 1024)` and `.max_message_size(16 * 1024)`.
+    *   This ensures the underlying websocket implementation rejects oversized payloads early.
 
-**Action:**
-Strictly enforce the "Pull" handshake state.
+### 4. Docker Security (Privilege Escalation)
+The container runs as root.
+*   **Action**: Modify `server/Dockerfile`.
+    *   Create a non-root user (e.g., `moli`).
+    *   Switch to this user with `USER moli` before the `CMD`.
+    *   Ensure the binary is executable by this user (standard `COPY` usually preserves permissions or sets root:root 755, which is fine for execution).
 
-1.  **Track Requests:** Add a state variable (e.g., `pendingPullRequests: Set<string>`) to track `transferId`s that this client has explicitly requested via `pullFile`.
-2.  **Verify Incoming Meta:** In `handleDataMessage`, when a `'meta'` message arrives:
-    *   Check if `msg.transferId` exists in `pendingPullRequests`.
-    *   If **NOT found**: Log a security warning (e.g., "Blocking unrequested transfer") and **ignore** the message. Do not set `currentMeta`.
-    *   If **found**: Remove the ID from the set and proceed with the transfer.
-3.  **Clean Up:** Ensure `pendingPullRequests` does not leak memory (e.g., remove ID on timeout or error if feasible, though the strict check on arrival is the priority).
+## Implementation Details
 
----
+*   **Imports**: You may need to import `std::collections::HashMap`, `std::net::IpAddr`, `axum::extract::ConnectInfo`, and `axum::http::StatusCode`.
+*   **Logging**: Add `println!` or `tracing::info!` logs when:
+    *   A room is removed.
+    *   An IP is rate-limited.
+*   **Safety**: Ensure locks are held for the shortest possible time to avoid contention.
 
-## 2. Server-Side: Global Connection Limit
-**File:** `server/src/main.rs`
-
-**Vulnerability:**
-The server limits users per *room* but lacks a *global* connection limit. A flood of connections can exhaust file descriptors or RAM on the Raspberry Pi.
-
-**Action:**
-Implement a global "Circuit Breaker".
-
-1.  **Global Counter:** Add a global atomic counter (e.g., `conn_count: Arc<AtomicUsize>`) to `AppState`.
-2.  **Config:** Define a hard limit (e.g., `const MAX_GLOBAL_CONNECTIONS: usize = 1000;`).
-3.  **Enforcement:**
-    *   In `ws_handler` (before upgrading) or at the very start of `handle_socket`:
-    *   Check if `current_count >= MAX_GLOBAL_CONNECTIONS`.
-    *   If exceeded: Return a `503 Service Unavailable` (if in handler) or immediately close the socket (if in upgrade).
-    *   Increment the counter on successful connection.
-    *   Decrement the counter when the socket handler finishes (ensure this happens even on panic/error).
-
----
-
-## 3. Server-Side: Secure Secrets
-**File:** `server/src/main.rs`
-
-**Vulnerability:**
-`TURN_SECRET` defaults to a hardcoded string `"dev_secret_local_only"`. If a user forgets to set this env var in production, the server is insecure.
-
-**Action:**
-Fail safe.
-
-1.  **Require Env Var:** Change the logic to **panic** or exit if `TURN_SECRET` is not set.
-2.  **Dev Mode Exception (Optional):** If you really need a fallback for local dev, make it explicit (e.g., only if `APP_ENV != production`), but strictly speaking, requiring the secret is safer. **Panic is preferred for this task.**
+## Verification
+After implementing, verify:
+1.  Connect multiple clients.
+2.  Disconnect all clients from a room -> Room should disappear from memory (log it).
+3.  Connect >10 clients from the same IP -> 11th should be rejected.
+4.  Send >16KB message -> Connection should close immediately or error.
