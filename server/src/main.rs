@@ -1,11 +1,12 @@
 use axum::{
-    extract::{State, ws::{Message, WebSocket, WebSocketUpgrade}},
+    extract::{State, ws::{Message, WebSocket, WebSocketUpgrade}, ConnectInfo},
     response::IntoResponse,
     routing::get,
     Router,
+    http::StatusCode,
 };
-use std::{net::SocketAddr, sync::{Arc, atomic::{AtomicUsize, Ordering}}};
-use tokio::sync::{broadcast, RwLock};
+use std::{net::{SocketAddr, IpAddr}, sync::{Arc, RwLock as StdRwLock, atomic::{AtomicUsize, Ordering}}, collections::HashMap};
+use tokio::sync::{broadcast, RwLock as TokioRwLock};
 use tower_http::services::ServeDir;
 use uuid::Uuid;
 use hmac::{Hmac, Mac};
@@ -17,6 +18,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const ROOM_CAPACITY: usize = 100; // Production Limit
 const MAX_GLOBAL_CONNECTIONS: usize = 1000; // Circuit Breaker
 const TURN_TTL: u64 = 3600; // 1 Hour
+const MAX_CONNS_PER_IP: usize = 10;
+const MAX_MSG_SIZE: usize = 16 * 1024; // 16KB
 
 struct BroadcastMsg {
     sender_id: String,
@@ -31,8 +34,27 @@ struct Room {
 
 #[derive(Clone)]
 struct AppState {
-    rooms: Arc<RwLock<Vec<Room>>>,
+    rooms: Arc<TokioRwLock<Vec<Room>>>,
     conn_count: Arc<AtomicUsize>,
+    ip_counts: Arc<StdRwLock<HashMap<IpAddr, usize>>>,
+}
+
+struct ConnectionGuard {
+    ip: IpAddr,
+    ip_counts: Arc<StdRwLock<HashMap<IpAddr, usize>>>,
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        if let Ok(mut counts) = self.ip_counts.write() {
+             if let Some(count) = counts.get_mut(&self.ip) {
+                 *count = count.saturating_sub(1);
+                 if *count == 0 {
+                     counts.remove(&self.ip);
+                 }
+             }
+        }
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -60,8 +82,9 @@ async fn main() {
     }
 
     let app_state = AppState {
-        rooms: Arc::new(RwLock::new(Vec::new())),
+        rooms: Arc::new(TokioRwLock::new(Vec::new())),
         conn_count: Arc::new(AtomicUsize::new(0)),
+        ip_counts: Arc::new(StdRwLock::new(HashMap::new())),
     };
 
     let app = Router::new()
@@ -73,7 +96,7 @@ async fn main() {
     let addr = SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, 9090));
     println!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
 }
 
 async fn get_ice_config() -> axum::Json<IceConfig> {
@@ -103,18 +126,42 @@ async fn get_ice_config() -> axum::Json<IceConfig> {
 }
 
 async fn ws_handler(
-    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
+    ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
+    let ip = addr.ip();
+
     // SECURITY: Global Connection Limit (Circuit Breaker)
     if state.conn_count.load(Ordering::Relaxed) >= MAX_GLOBAL_CONNECTIONS {
-        return (axum::http::StatusCode::SERVICE_UNAVAILABLE, "Server Busy").into_response();
+        return (StatusCode::SERVICE_UNAVAILABLE, "Server Busy").into_response();
     }
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+    // SECURITY: IP Rate Limiting
+    let guard = {
+        match state.ip_counts.write() {
+            Ok(mut ip_counts) => {
+                let count = ip_counts.entry(ip).or_insert(0);
+                if *count >= MAX_CONNS_PER_IP {
+                    println!("Rate Limit Reached for IP: {}", ip);
+                    return (StatusCode::TOO_MANY_REQUESTS, "Rate Limit Exceeded").into_response();
+                }
+                *count += 1;
+                ConnectionGuard {
+                    ip,
+                    ip_counts: state.ip_counts.clone(),
+                }
+            }
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Lock Poisoned").into_response(),
+        }
+    };
+
+    ws.max_frame_size(MAX_MSG_SIZE)
+      .max_message_size(MAX_MSG_SIZE)
+      .on_upgrade(move |socket| handle_socket(socket, state, guard))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState) {
+async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: ConnectionGuard) {
     let my_id = Uuid::new_v4().to_string();
 
     // Increment Global Count
@@ -159,6 +206,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     // 3. Send Identity (Security Hardening: Server Authority)
     let identity_msg = format!("{{\"type\": \"identity\", \"senderId\": \"{}\"}}", my_id);
     if socket.send(Message::Text(identity_msg)).await.is_err() {
+        cleanup(&state, &count_ref, &my_id, &room_id, &tx).await;
         return;
     }
 
@@ -172,50 +220,49 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     loop {
         tokio::select! {
             Some(msg) = socket.recv() => {
-                if let Ok(Message::Text(text)) = msg {
-                     // 0. DoS Protection: Rate Limit
-                    if rate_limit_start.elapsed() >= RATE_LIMIT_WINDOW {
-                        rate_limit_counter = 0;
-                        rate_limit_start = std::time::Instant::now();
+                match msg {
+                    Ok(Message::Text(text)) => {
+                         // 0. DoS Protection: Rate Limit
+                        if rate_limit_start.elapsed() >= RATE_LIMIT_WINDOW {
+                            rate_limit_counter = 0;
+                            rate_limit_start = std::time::Instant::now();
+                        }
+                        rate_limit_counter += 1;
+                        if rate_limit_counter > RATE_LIMIT_MAX {
+                             println!("Rate limit exceeded for {}. Disconnecting.", my_id);
+                             break;
+                        }
+
+                        // Size limit is enforced by Axum/Tungstenite
+                        if text.len() > MAX_MSG_SIZE {
+                            continue;
+                        }
+
+                        // 2. Identity Spoofing Protection: Force senderId
+                        let mut json_msg: serde_json::Value = match serde_json::from_str(&text) {
+                            Ok(v) => v,
+                            Err(_) => continue, // Drop invalid JSON
+                        };
+
+                        if let Some(obj) = json_msg.as_object_mut() {
+                            obj.insert("senderId".to_string(), serde_json::Value::String(my_id.clone()));
+                        }
+
+                        let safe_payload = json_msg.to_string();
+
+                        let msg = Arc::new(BroadcastMsg {
+                            sender_id: my_id.clone(),
+                            payload: safe_payload,
+                        });
+                        // Broadcast ONLY to this room
+                        let _ = tx.send(msg);
                     }
-                    rate_limit_counter += 1;
-                    if rate_limit_counter > RATE_LIMIT_MAX {
-                         println!("Rate limit exceeded for {}. Disconnecting.", my_id);
-                         break;
-                    }
-
-                     // 1. DoS Protection: Size Limit
-                    if text.len() > 16 * 1024 { // 16KB Limit
-                        // println!("Warn: User {} sent too large message ({} bytes). Dropping.", my_id, text.len());
-                        continue;
-                    }
-
-                    // 2. Identity Spoofing Protection: Force senderId
-                    // We parse the message, inject the TRUE senderId, and re-serialize.
-                    let mut json_msg: serde_json::Value = match serde_json::from_str(&text) {
-                        Ok(v) => v,
-                        Err(_) => continue, // Drop invalid JSON
-                    };
-
-                    if let Some(obj) = json_msg.as_object_mut() {
-                        // FORCE OVERWRITE invalid or missing senderId
-                        obj.insert("senderId".to_string(), serde_json::Value::String(my_id.clone()));
-                    }
-
-                    let safe_payload = json_msg.to_string();
-
-                    let msg = Arc::new(BroadcastMsg {
-                        sender_id: my_id.clone(),
-                        payload: safe_payload,
-                    });
-                    // Broadcast ONLY to this room
-                    let _ = tx.send(msg);
-                } else {
-                    break;
+                    Ok(Message::Close(_)) => break,
+                    Err(_) => break, // WebSocket Error
+                    _ => {}
                 }
             }
             Ok(msg) = rx.recv() => {
-                // Filter self
                 if msg.sender_id != my_id {
                     if socket.send(Message::Text(msg.payload.clone())).await.is_err() {
                         break;
@@ -225,18 +272,39 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         }
     }
 
-    // 3. Cleanup
-    // Decrement count
-    let _prev = count_ref.fetch_sub(1, Ordering::Relaxed);
-    // println!("User {} left Room {}. (Count -> {})", my_id, room_id, prev - 1);
+    cleanup(&state, &count_ref, &my_id, &room_id, &tx).await;
+}
 
-    // Send Leave Msg (To Room Only)
+async fn cleanup(
+    state: &AppState,
+    count_ref: &Arc<AtomicUsize>,
+    my_id: &str,
+    room_id: &str,
+    tx: &broadcast::Sender<Arc<BroadcastMsg>>
+) {
+    // 1. Send Leave Msg (To Room Only)
     let leave_msg = Arc::new(BroadcastMsg {
-        sender_id: my_id.clone(),
+        sender_id: my_id.to_string(),
         payload: format!("{{\"type\": \"leave\", \"senderId\": \"{}\"}}", my_id),
     });
     let _ = tx.send(leave_msg);
 
-    // Decrement Global Count
+    // 2. Decrement Room Count
+    let _ = count_ref.fetch_sub(1, Ordering::Relaxed);
+
+    // 3. CLEANUP: Remove Room if Empty
+    {
+        let mut rooms = state.rooms.write().await;
+        if let Some(idx) = rooms.iter().position(|r| r.id == *room_id) {
+             if rooms[idx].count.load(Ordering::Relaxed) == 0 {
+                 println!("Room {} is empty. Removing.", room_id);
+                 rooms.remove(idx);
+             }
+        }
+    }
+
+    // 4. Decrement Global Count
     state.conn_count.fetch_sub(1, Ordering::Relaxed);
+
+    // IP count is handled by ConnectionGuard Drop
 }
