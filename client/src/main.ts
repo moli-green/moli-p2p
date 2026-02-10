@@ -7,7 +7,8 @@ import {
   RENDER_INTERVAL_MS,
   MAX_GALLERY_ITEMS,
   TOAST_DURATION_MS,
-  NETWORK_TIMEOUT_MS
+  NETWORK_TIMEOUT_MS,
+  GOSSIP_TTL
 } from './constants';
 
 declare global {
@@ -106,7 +107,7 @@ const discoveredCountSpan = document.createElement('span');
 discoveredCountSpan.id = 'discovered-count';
 discoveredCountSpan.textContent = '0';
 discoveredSpan.appendChild(discoveredCountSpan);
-discoveredSpan.appendChild(document.createTextNode(' Items'));
+discoveredSpan.appendChild(document.createTextNode(' Peers'));
 statsGroup.appendChild(bufferIndicator);
 statsGroup.appendChild(discoveredSpan);
 
@@ -194,17 +195,16 @@ interface ImageItem {
   isLocal: boolean;
   timestamp: number;
   element: HTMLElement;
-  holderBadge: HTMLElement;
   caption?: string;
 }
 
 const imageStore: ImageItem[] = [];
-const holderMap = new Map<string, Set<string>>(); // hash -> Set of peerIds
 const renderQueue: ImageItem[] = [];
 
 let isPaused = false;
 let renderInterval = RENDER_INTERVAL_MS;
 let tickerTimeout: ReturnType<typeof setTimeout> | null = null;
+
 
 // --- 3. Helper Functions ---
 
@@ -233,8 +233,8 @@ const originalError = console.error;
 
 console.log = (...args) => {
   originalLog(...args);
-  // Info logs disabled on screen for performance
-  // logToScreen(...);
+  // Info logs enabled for debugging
+  logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '));
 };
 
 // ...
@@ -242,21 +242,27 @@ console.log = (...args) => {
 function processTicker() {
   if (tickerTimeout) clearTimeout(tickerTimeout);
 
-  if (!isPaused && renderQueue.length > 0) {
-    const nextItem = renderQueue.shift()!;
+  try {
+    if (!isPaused && renderQueue.length > 0) {
+      console.log(`[Ticker] Processing item. Queue remaining: ${renderQueue.length}`);
+      const nextItem = renderQueue.shift()!;
 
-    // FIX: Check if item is still in imageStore before appending. (Ghost Image Fix)
-    const exists = imageStore.some(i => i.id === nextItem.id);
-    if (!exists) {
-      console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
-      tickerTimeout = setTimeout(processTicker, 0); // Recursive call to process next immediately
+      // FIX: Check if item is still in imageStore before appending. (Ghost Image Fix)
+      const exists = imageStore.some(i => i.id === nextItem.id);
+      if (!exists) {
+        console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
+        tickerTimeout = setTimeout(processTicker, 0); // Recursive call to process next immediately
+        updateBufferUI();
+        return;
+      }
+
+      gallery.appendChild(nextItem.element);
+      console.log(`[Ticker] Appended item ${nextItem.hash} to DOM.`);
+      updateDecayUI();
       updateBufferUI();
-      return;
     }
-
-    gallery.appendChild(nextItem.element);
-    updateDecayUI();
-    updateBufferUI();
+  } catch (e) {
+    console.error(`[Ticker] CRASHED:`, e);
   }
 
   tickerTimeout = setTimeout(processTicker, renderInterval);
@@ -277,21 +283,38 @@ async function hashBlob(blob: Blob): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function checkImageHealth(blob: Blob): Promise<{ ok: boolean; reason?: string; }> {
+async function checkImageHealth(blob: Blob): Promise<{ ok: boolean; reason?: string }> {
   const url = URL.createObjectURL(blob);
   const img = new Image();
   img.src = url;
+
   return new Promise((resolve) => {
     img.onload = () => {
       URL.revokeObjectURL(url);
+
+      const MAX_DIMENSION = 8192; // 8K allowed, anything larger is likely an attack or wallpaper
+      const MAX_MEGAPIXELS = 50 * 1000 * 1000; // 50MP limit
+
       if (img.width === 0 || img.height === 0) {
-        return resolve({ ok: false, reason: "Invalid dimensions (0px)" });
+        resolve({ ok: false, reason: "Invalid dimensions (0px)" });
+        return;
       }
+
+      if (img.width > MAX_DIMENSION || img.height > MAX_DIMENSION) {
+        resolve({ ok: false, reason: `Dimension too large (${img.width}x${img.height} > ${MAX_DIMENSION}px)` });
+        return;
+      }
+
+      if (img.width * img.height > MAX_MEGAPIXELS) {
+        resolve({ ok: false, reason: `Resolution too high (>50MP)` });
+        return;
+      }
+
       resolve({ ok: true });
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      resolve({ ok: false, reason: "Invalid image" });
+      resolve({ ok: false, reason: "Invalid image data" });
     };
   });
 }
@@ -357,35 +380,7 @@ function updateDecayUI() {
   });
 }
 
-function updateHolderUI(hash: string) {
-  const item = imageStore.find(i => i.hash === hash);
-  if (item) {
-    const peers = holderMap.get(hash);
-    const count = (peers ? peers.size : 0) + 1;
-    item.holderBadge.textContent = `👤 ${count} `;
-    item.holderBadge.style.display = 'block';
-    item.holderBadge.style.background = count > 1 ? 'rgba(0, 200, 0, 0.8)' : 'rgba(0, 0, 0, 0.6)';
 
-    let shadows = [];
-    if (item.isPinned) {
-      shadows.push('0 0 10px #ffd700');
-      item.element.style.borderColor = '#ffd700';
-    } else {
-      item.element.style.borderColor = item.isLocal ? 'blue' : '#ccc';
-    }
-
-    if (count > 1) {
-      const glowOpacity = Math.min(0.1 + (count * 0.05), 0.6);
-      const blurRadius = item.isPinned ? 25 : 15;
-      shadows.push(`0 0 ${blurRadius}px rgba(0, 255, 0, ${glowOpacity})`);
-      item.element.style.zIndex = '5';
-    } else {
-      item.element.style.zIndex = '1';
-    }
-    item.element.style.boxShadow = shadows.join(', ');
-    updateDecayUI();
-  }
-}
 
 
 function checkEviction() {
@@ -424,18 +419,55 @@ let activeDownloadCount = 0;
 const downloadQueue: { session: PeerSession; transferId: string; meta: any }[] = [];
 
 function processDownloadQueue() {
+  console.log(`[Scheduler] ProcessQueue: Active=${activeDownloadCount}, Queue=${downloadQueue.length}`);
   if (activeDownloadCount >= MAX_CONCURRENT_DOWNLOADS || downloadQueue.length === 0) return;
   while (activeDownloadCount < MAX_CONCURRENT_DOWNLOADS && downloadQueue.length > 0) {
     const task = downloadQueue.shift()!;
     activeDownloadCount++;
-    console.log(`[Scheduler] PULLING ${task.meta.name} from ${task.session.peerId} `);
+    console.log(`[Scheduler] STARTING PULL ${task.meta.name} from ${task.session.peerId} (Active: ${activeDownloadCount})`);
     task.session.pullFile(task.transferId);
   }
 }
 
 function releaseDownloadSlot() {
+  console.log(`[Scheduler] Releasing Download Slot. Before: ${activeDownloadCount}`);
   activeDownloadCount = Math.max(0, activeDownloadCount - 1);
+  console.log(`[Scheduler] Released Download Slot. After: ${activeDownloadCount}`);
   processDownloadQueue();
+}
+
+// --- Upload Scheduler (Spec H: Split Semaphore) ---
+const MAX_CONCURRENT_UPLOADS = 3;
+let activeUploadCount = 0;
+interface UploadTask {
+  blob: Blob;
+  name: string;
+  resolve: (value: { success: boolean; reason?: string }) => void;
+  reject: (reason?: any) => void;
+}
+const uploadQueue: UploadTask[] = [];
+
+function processUploadQueue() {
+  console.log(`[Scheduler] ProcessUploadQueue: Active=${activeUploadCount}, Queue=${uploadQueue.length}`);
+  if (activeUploadCount >= MAX_CONCURRENT_UPLOADS || uploadQueue.length === 0) return;
+
+  const task = uploadQueue.shift()!;
+  activeUploadCount++;
+  console.log(`[Scheduler] STARTING UPLOAD ${task.name} (Active: ${activeUploadCount})`);
+
+  // Execute actual upload logic (detached to prevent blocking scheduler)
+  performLocalUpload(task.blob, task.name)
+    .then(task.resolve)
+    .catch(task.reject)
+    .finally(() => {
+      releaseUploadSlot();
+    });
+}
+
+function releaseUploadSlot() {
+  console.log(`[Scheduler] Releasing Upload Slot. Before: ${activeUploadCount}`);
+  activeUploadCount = Math.max(0, activeUploadCount - 1);
+  processUploadQueue();
 }
 
 function shareInventory() {
@@ -446,124 +478,124 @@ function shareInventory() {
 }
 
 // --- CORE: Add Image to Gallery (Refactored) ---
-async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: string, isPinned: boolean = false, name?: string) {
-  const hash = await hashBlob(blob);
+// --- CORE: Add Image to Gallery (Simplified Phase 31) ---
+async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: string, isPinned: boolean = false, name?: string, originalSenderId?: string) {
+  try {
+    const hash = await hashBlob(blob);
 
-  // 0. Guard: Blacklist Check
-  if (network.isBlacklisted(hash)) {
-    console.warn(`[Guard] Blocked blacklisted content: ${hash} `);
-    if (remotePeerId) releaseDownloadSlot();
-    return;
-  }
-
-  if (remotePeerId) {
-    if (!holderMap.has(hash)) holderMap.set(hash, new Set());
-    holderMap.get(hash)!.add(remotePeerId);
-  }
-
-  const existing = imageStore.find(i => i.hash === hash);
-  if (existing) {
-    if (name && !existing.caption) existing.caption = name;
-    if (isPinned && !existing.isPinned) {
-      console.log(`[Bridge] Image ${hash.substring(0, 8)} promoted to Pinned by ${remotePeerId} `);
-      existing.isPinned = true;
-      updateHolderUI(hash);
-    } else {
-      console.log(`Deduplicated image: ${hash.substring(0, 8)} `);
-    }
-    updateHolderUI(hash);
-    if (remotePeerId) releaseDownloadSlot();
-    return;
-  }
-
-  const health = await checkImageHealth(blob);
-  if (!health.ok) {
-    console.warn(`[Gatekeeper] REJECTED: ${health.reason} `);
-    if (isLocal) showToast(`Rejected: ${health.reason} `, 'warn');
-    if (remotePeerId) releaseDownloadSlot();
-    return;
-  }
-
-  const id = Math.random().toString(36).substring(2, 11);
-  const url = URL.createObjectURL(blob);
-  const timestamp = Date.now();
-
-  const container = document.createElement('div');
-  container.className = 'gallery-item';
-  const img = document.createElement('img');
-  img.src = url;
-
-  img.onload = () => {
-    if (img.naturalWidth < 128 || img.naturalHeight < 128) {
-      img.style.imageRendering = 'pixelated';
-    }
-  };
-
-  if (!isPinned) {
-    img.classList.add('blurred');
-    img.title = "Safety Filter: Click to Reveal";
-  }
-
-  container.onclick = (e) => {
-    e.stopPropagation();
-    if (img.classList.contains('blurred')) {
-      img.classList.remove('blurred');
-      img.title = "";
+    // 0. Guard: Blacklist Check
+    if (network.isBlacklisted(hash)) {
+      console.warn(`[Guard] Blocked blacklisted content: ${hash} `);
       return;
     }
-    lightbox.style.display = 'flex';
-    while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
-    const lbImg = document.createElement('img');
-    lbImg.src = url;
-    lightbox.appendChild(lbImg);
-  };
 
-  const windmill = document.createElement('div');
-  windmill.className = 'windmill-static';
-  // SVG is static content, safer to use innerHTML than construct paths manually
-  windmill.innerHTML = `
-    <svg viewBox="0 0 100 100" width="32" height="32" style="width: 32px; height: 32px;">
-      <path d="M48 95 L52 95 L52 50 L48 50 Z" fill="rgba(255,255,255,0.2)" />
-      <g>
-        <path d="M50 50 L50 10 L65 10 L65 45 Z" fill="currentColor" />
-        <path d="M50 50 L90 50 L90 65 L55 65 Z" fill="currentColor" />
-        <path d="M50 50 L50 90 L35 90 L35 55 Z" fill="currentColor" />
-        <path d="M50 50 L10 50 L10 35 L45 35 Z" fill="currentColor" />
-      </g>
-      <circle cx="50" cy="50" r="5" fill="currentColor" />
-    </svg>
-    `;
+    if (originalSenderId) {
+      console.log(`[Trace] Image ${hash.substring(0, 8)} originated from ${originalSenderId}`);
+    }
 
-  const overlay = document.createElement('div');
-  overlay.className = 'card-overlay';
+    // Deduplication
+    const existing = imageStore.find(i => i.hash === hash);
+    if (existing) {
+      if (name && !existing.caption) existing.caption = name;
+      if (isPinned && !existing.isPinned) {
+        console.log(`[Bridge] Image ${hash.substring(0, 8)} promoted to Pinned by ${remotePeerId} `);
+        existing.isPinned = true;
+      }
+      return;
+    }
 
-  const label = document.createElement('div');
-  label.style.fontSize = '12px';
-  label.style.marginBottom = '5px';
-  label.textContent = isLocal ? 'Original Soul' : 'Shared Soul';
+    const health = await checkImageHealth(blob);
+    if (!health.ok) {
+      console.warn(`[Gatekeeper] REJECTED: ${health.reason} `);
+      if (isLocal) showToast(`Rejected: ${health.reason} `, 'warn');
+      return;
+    }
 
-  const actionRow = document.createElement('div');
-  actionRow.className = 'action-row';
+    const id = Math.random().toString(36).substring(2, 11);
+    const url = URL.createObjectURL(blob);
+    const timestamp = Date.now();
 
-  const holderBadge = document.createElement('div');
-  holderBadge.className = 'holder-badge';
-  holderBadge.style.display = 'none';
+    // --- Standard Grid Rendering ---
+    const container = document.createElement('div');
+    container.className = 'gallery-item';
 
-  const pinBtn = document.createElement('button');
-  pinBtn.className = 'pin-btn';
-  pinBtn.textContent = 'Pin';
-  pinBtn.onclick = (e) => {
-    e.stopPropagation();
-    const item = imageStore.find(i => i.id === id);
-    if (item) {
-      item.isPinned = !item.isPinned;
-      pinBtn.textContent = item.isPinned ? 'Unpin' : 'Pin';
-      pinBtn.classList.toggle('pinned', item.isPinned);
+    // Simple Image Tag
+    const img = document.createElement('img');
+    img.src = url;
+    img.className = 'gallery-image';
+    img.loading = 'lazy';
 
-      if (item.isPinned) {
-        fetch(item.url).then(r => r.blob()).then(blob => {
-          const receiptRaw = localStorage.getItem(`moli_receipt_${item.hash} `);
-          const receipt = receiptRaw ? JSON.parse(receiptRaw) : undefined;
+    // Phase 31: Safety Blur (Default for remote)
+    if (!isLocal) {
+      img.classList.add('blurred');
+    }
+
+    // Click to Reveal (Toggle Blur)
+    img.onclick = (e) => {
+      e.stopPropagation();
+      if (img.classList.contains('blurred')) {
+        img.classList.remove('blurred');
+      } else {
+        // If already revealed, open Lightbox (or toggle back? Plan says "Click to Reveal")
+        // Let's make it toggle for safety/privacy re-masking
+        // Wait, Standard behavior: Click -> Open Lightbox.
+        // So: If blurred -> Unblur. If unblurred -> Lightbox (via container click).
+        // But event propagation... 
+        // If I click img, I need to stop prop if blurred.
+
+        // Actually, let's handle logic here:
+        // Handled in container.onclick?
+        // "Click to Reveal" usually implies direct interaction.
+      }
+    };
+
+    // Lightbox on Click (Only if revealed)
+    container.onclick = (e) => {
+      e.stopPropagation();
+      if (img.classList.contains('blurred')) {
+        img.classList.remove('blurred');
+        return;
+      }
+
+      lightbox.style.display = 'flex';
+      while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+      const lbImg = document.createElement('img');
+      lbImg.src = url;
+      lightbox.appendChild(lbImg);
+    };
+
+    // Overlay for Actions (Pin/Burn)
+    const overlay = document.createElement('div');
+    overlay.className = 'card-overlay';
+
+    const label = document.createElement('div');
+    label.style.fontSize = '12px';
+    label.style.marginBottom = 'auto'; // Push actions to bottom
+    label.style.alignSelf = 'flex-start';
+    label.style.background = 'rgba(0,0,0,0.5)';
+    label.style.padding = '2px 6px';
+    label.style.borderRadius = '4px';
+    label.textContent = isLocal ? 'Original Soul' : 'Shared Soul';
+
+    // Actions Row
+    const actionRow = document.createElement('div');
+    actionRow.className = 'action-row';
+    actionRow.style.width = '100%';
+    actionRow.style.justifyContent = 'space-between';
+
+    // Pin Button
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'pin-btn';
+    pinBtn.textContent = 'Pin';
+    pinBtn.onclick = (e) => {
+      e.stopPropagation();
+      const item = imageStore.find(i => i.id === id);
+      if (item) {
+        item.isPinned = !item.isPinned;
+        pinBtn.textContent = item.isPinned ? 'Unpin' : 'Pin';
+        pinBtn.classList.toggle('pinned', item.isPinned);
+
+        if (item.isPinned) {
           Vault.save({
             hash: item.hash,
             blob,
@@ -571,90 +603,77 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
             size: blob.size,
             mime: blob.type,
             timestamp: item.timestamp,
-            receipt: receipt
           });
-        });
-      } else {
-        Vault.remove(item.hash);
-      }
+          showToast("Pinned to Vault", "success");
+        } else {
+          Vault.remove(item.hash);
+          showToast("Unpinned", "info");
+        }
 
-      updateHolderUI(hash);
-      fetch(item.url).then(r => r.blob()).then(blob => {
+        // Optimistic Broadcast on Pin
         network.broadcastImage(blob, item.hash, item.isPinned, item.caption);
-      });
+      }
+    };
+
+    if (isPinned) {
+      pinBtn.classList.add('pinned');
+      pinBtn.textContent = 'Unpin';
     }
-  };
 
-  const burnActionBtn = document.createElement('button');
-  burnActionBtn.className = 'burn-action-btn';
-  burnActionBtn.textContent = '🔥 Burn';
-  burnActionBtn.title = 'Signal malicious content (Global)';
-  burnActionBtn.onclick = async (e) => {
-    e.stopPropagation();
-    if (confirm('CONFIRMATION: Are you sure you want to BURN this soul? This action cannot be undone.')) {
-      const item = imageStore.find(i => i.id === id);
-      if (!item) return;
+    // Consolidated Trash Button (Phase 31)
+    const trashBtn = document.createElement('button');
+    trashBtn.className = 'remove-action-btn'; // Reuse style or new class
+    trashBtn.textContent = '🗑️';
+    trashBtn.title = 'Remove & Block (Local)';
+    trashBtn.onclick = async (e) => {
+      e.stopPropagation();
 
-      // Sakoku Policy: Local Block Only
-      // We do NOT broadcast burn signals. We only clean our own castle.
-      console.log(`[Burn] Local Block executed for ${item.hash}`);
+      const confirmMsg = isLocal
+        ? 'Remove this image from your view? (It will NOT be blocked)'
+        : 'Remove & Block this image? (It will be added to your local blacklist)';
 
-      // 1. Add to Blacklist
-      network.addToBlacklist(item.hash);
+      if (confirm(confirmMsg)) {
+        if (!isLocal) {
+          console.log(`[Trash] Blocking remote content: ${hash}`);
+          network.addToBlacklist(hash);
+        } else {
+          console.log(`[Trash] Removing local content (No Block): ${hash}`);
+        }
 
-      // 2. Remove from Vault
-      await Vault.remove(item.hash);
+        await Vault.remove(hash);
+        removeImageFromGallery(hash);
+        showToast(isLocal ? "Removed (Local)" : "Removed & Blocked", "info");
+      }
+    };
 
-      // 3. Remove from UI
-      removeImageFromGallery(item.hash);
+    const rightActions = document.createElement('div');
+    rightActions.style.display = 'flex';
+    rightActions.style.gap = '5px';
+    rightActions.appendChild(trashBtn);
 
-      showToast("Content burned from local view.", "success");
-    }
-  };
+    actionRow.appendChild(pinBtn);
+    actionRow.appendChild(rightActions);
 
-  const removeActionBtn = document.createElement('button');
-  removeActionBtn.className = 'remove-action-btn';
-  removeActionBtn.textContent = '🗑️';
-  removeActionBtn.title = 'Remove local copy only (No broadcast)';
-  removeActionBtn.style.marginLeft = '4px';
-  removeActionBtn.style.padding = '2px 6px';
-  removeActionBtn.style.fontSize = '0.8rem';
-  removeActionBtn.style.background = 'rgba(255, 255, 255, 0.1)';
-  removeActionBtn.style.border = 'none';
-  removeActionBtn.style.borderRadius = '4px';
-  removeActionBtn.style.cursor = 'pointer';
-  removeActionBtn.style.color = '#fff';
+    overlay.appendChild(label);
+    overlay.appendChild(actionRow);
 
-  removeActionBtn.onclick = (e) => {
-    e.stopPropagation();
-    if (confirm('Remove this image from your local view?')) {
-      removeImageFromGallery(hash);
-      Vault.remove(hash);
-      showToast("Image removed locally.", "success");
-    }
-  };
+    container.appendChild(img);
+    container.appendChild(overlay);
 
-  overlay.appendChild(label);
-  overlay.appendChild(actionRow);
-  actionRow.appendChild(holderBadge);
-  actionRow.appendChild(pinBtn);
-  actionRow.appendChild(burnActionBtn);
-  actionRow.appendChild(removeActionBtn);
+    // Store Item
+    const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, caption: name };
+    imageStore.push(newItem);
 
-  container.appendChild(img);
-  container.appendChild(windmill);
-  container.appendChild(overlay);
+    renderQueue.push(newItem);
+    updateBufferUI();
+    checkEviction();
+    shareInventory();
 
-  const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, holderBadge, caption: name };
-  imageStore.push(newItem);
-
-  renderQueue.push(newItem);
-  updateBufferUI();
-  updateHolderUI(hash);
-  checkEviction();
-  shareInventory();
-
-  if (remotePeerId) releaseDownloadSlot();
+  } catch (e) {
+    console.error('[AddImage] Error:', e);
+  } finally {
+    if (remotePeerId) releaseDownloadSlot();
+  }
 }
 
 async function initVaultAndLoad(): Promise<void> {
@@ -677,7 +696,19 @@ async function initVaultAndLoad(): Promise<void> {
   }
 }
 
-async function processLocalUpload(file: Blob, _name: string = 'image.png'): Promise<{ success: boolean; reason?: string }> {
+async function processLocalUpload(blob: Blob, name: string = 'image.png'): Promise<{ success: boolean; reason?: string }> {
+  return new Promise((resolve, reject) => {
+    uploadQueue.push({
+      blob,
+      name,
+      resolve,
+      reject
+    });
+    processUploadQueue();
+  });
+}
+
+async function performLocalUpload(file: Blob, _name: string = 'image.png'): Promise<{ success: boolean; reason?: string }> {
   const healthCheck = await checkImageHealth(file);
   if (!healthCheck.ok) {
     showToast(`Rejected: ${healthCheck.reason} `, 'warn');
@@ -685,6 +716,8 @@ async function processLocalUpload(file: Blob, _name: string = 'image.png'): Prom
   }
   const hash = await hashBlob(file);
 
+  // Auto-Pin Restored (Phase 39)
+  // Since we can now remove local uploads without blocking, it's safe to pin everything.
   await Vault.save({
     hash,
     blob: file,
@@ -693,33 +726,42 @@ async function processLocalUpload(file: Blob, _name: string = 'image.png'): Prom
     mime: file.type,
     timestamp: Date.now(),
   }).then(() => {
-    console.log(`[Vault] Auto - pinned original upload: ${hash.slice(0, 8)} `);
-    addImageToGallery(file, true, undefined, true, _name);
+    console.log(`[Vault] Auto-pinned original upload: ${hash.slice(0, 8)} `);
+    addImageToGallery(file, true, undefined, true, _name); // isPinned = true
   });
 
   shareInventory();
-  network.broadcastImage(file, hash, false, _name);
-  showToast("Broadcasted successfuly!", "success");
-  return { success: true };
+  const sentCount = network.broadcastImage(file, hash, false, _name);
+
+  if (sentCount > 0) {
+    showToast(`Broadcasted to ${sentCount} peers!`, "success");
+    return { success: true };
+  } else {
+    showToast("Offline: Saved to Vault (Local Only).", "warn");
+    return { success: true }; // Considered success because it's saved locally
+  }
 }
 
 // --- Identity & Network Initialization ---
 
 const network = new P2PNetwork(
-  async (blob: Blob, peerId: string, _isPinned?: boolean, _publicKey?: string, name?: string) => {
-    // Sovereign Safety: Incoming images are untrusted (unpinned) by default, forcing the Blur.
-    addImageToGallery(blob, false, peerId, false, name);
+  async (blob: Blob, peerId: string, isPinned?: boolean, name?: string, _ttl?: number, originalSenderId?: string) => {
+    // Sovereign Safety: Incoming images are untrusted (unpinned) by default.
+    // Phase 31: Pass originalSenderId for attribution
+    addImageToGallery(blob, false, peerId, isPinned, name, originalSenderId);
   },
   (type, session, _data) => {
     // Generic Event Handler (Sync Logic)
     if (type === 'connected') {
-      console.log(`[Sync] Handshake with ${session.peerId}. Sending ${imageStore.length} images.`);
-      const sorted = [...imageStore].sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
-      sorted.forEach(item => {
-        fetch(item.url).then(r => r.blob()).then(blob => {
-          session.sendImage(blob, item.hash, item.isPinned, item.caption);
-        });
-      });
+      console.log(`[Sync] Handshake with ${session.peerId}. Sending Inventory...`);
+
+      // 1. Send Inventory (Anti-Entropy / Pull Enabler) - NO OPTIMISTIC PUSH (Ghost Fix)
+      const allHashes = imageStore.map(i => i.hash);
+      session.sendInventory(allHashes);
+    } else if (type === 'sync-request') {
+      console.log(`[Sync] Received Sync Request from ${session.peerId}. Sending Inventory...`);
+      const allHashes = imageStore.map(i => i.hash);
+      session.sendInventory(allHashes);
     }
   },
   (count: number) => {
@@ -732,14 +774,37 @@ const network = new P2PNetwork(
   },
   (peerId: string, hashes: string[]) => { // Inventory Callback
     hashes.forEach(hash => {
-      if (!holderMap.has(hash)) holderMap.set(hash, new Set());
-      holderMap.get(hash)!.add(peerId);
-      updateHolderUI(hash);
+      // Pull Logic: Request missing items automatically
+      const weHaveIt = imageStore.some(i => i.hash === hash);
+      if (!weHaveIt && !network.isBlacklisted(hash)) {
+        const session = network.sessions.get(peerId);
+        if (session) {
+          console.log(`[Main] Missing hash ${hash.substring(0, 8)} in inventory. Requesting from ${peerId}...`);
+          session.requestFile(hash);
+        }
+      }
     });
   },
   (session: PeerSession, data: any) => { // Offer File Callback
+    // If trusted, we might prioritize download? For now just track.
+    console.log(`[Main] Queueing download ${data.name} from ${session.peerId}`);
     downloadQueue.push({ session, transferId: data.transferId, meta: data });
     processDownloadQueue();
+  },
+  (session: PeerSession, hash: string) => { // Request Handler (Provider Side)
+    const item = imageStore.find(i => i.hash === hash);
+    if (item) {
+      console.log(`[Main] Peer ${session.sessionPeerId} requested ${hash.substring(0, 8)}. Sending...`);
+      fetch(item.url)
+        .then(r => r.blob())
+        .then(blob => {
+          // Send Image (Tributes removed)
+          session.sendImage(blob, item.hash, item.isPinned, item.caption, GOSSIP_TTL);
+        })
+        .catch(e => console.error(`[Main] Failed to load requested image:`, e));
+    } else {
+      console.warn(`[Main] Peer requested unknown hash: ${hash}`);
+    }
   }
 );
 
@@ -813,7 +878,16 @@ if (idBurnBtn) {
 
       // 0. Close active connections
       try {
-        Vault.close();
+        Vault.close(); // Close Vault DB
+        network.close(); // Close Network (Peer connections + Blacklist DB?) 
+        // Note: Network.close() might not close Blacklist DB if it's separate.
+        // But main.ts doesn't hold reference to Blacklist DB connection directly, network does?
+        // Actually initBlacklist opens it. We need to close it.
+        // But we don't have a handle to it here.
+        // IndexedDB.close() is on the db instance.
+        // Let's rely on reload() clearing memory if delete fails?
+        // No, deleteDatabase needs connections closed.
+        // Let's try best effort.
       } catch (e) { console.error("Error closing DBs", e); }
 
       // 1. Wipe Secrets from LocalStorage
@@ -1074,74 +1148,59 @@ function showHelpModal() {
   pIntro.style.opacity = '0.7';
   pIntro.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
   pIntro.style.paddingBottom = '15px';
-  pIntro.textContent = 'Welcome to the Autonomous Distributed Gallery. This is an ephemeral mesh network where content exists only as long as someone holds it.';
+  pIntro.textContent = 'Welcome to the Autonomous Distributed Gallery. Content exists only as long as someone holds it.';
 
-  const sectionIdentity = document.createElement('div');
-  sectionIdentity.className = 'help-section';
-  const h3Id = document.createElement('h3');
-  h3Id.textContent = '🌱 Identity';
-  const pId = document.createElement('p');
-  pId.appendChild(document.createTextNode('You are a '));
-  const strongSov = document.createElement('strong');
-  strongSov.textContent = 'Sovereign Soul';
-  pId.appendChild(strongSov);
-  pId.appendChild(document.createElement('br'));
-  pId.appendChild(document.createTextNode('Your identity is generated locally and stored in your browser.'));
-  sectionIdentity.appendChild(h3Id);
-  sectionIdentity.appendChild(pId);
+  // Section 1: Philosophy & Limits
+  const sectionPhilo = document.createElement('div');
+  sectionPhilo.className = 'help-section';
+  const h3Philo = document.createElement('h3');
+  h3Philo.textContent = '⏳ Ephemeral Capacity';
+  const pPhilo = document.createElement('p');
+  pPhilo.innerHTML = `
+    <strong>Max Capacity: 50 Images</strong><br>
+    Your browser holds the latest 50 souls. When new ones arrive, the oldest unpinned ones are extinguished to make room.<br>
+    <em>"The fire must breathe."</em>
+  `;
+  sectionPhilo.appendChild(h3Philo);
+  sectionPhilo.appendChild(pPhilo);
 
+  // Section 2: Actions
   const sectionActions = document.createElement('div');
   sectionActions.className = 'help-section';
   const h3Act = document.createElement('h3');
   h3Act.textContent = '🎨 Actions';
+
   const pPin = document.createElement('p');
-  pPin.style.marginBottom = '10px';
-  const strongPin = document.createElement('strong');
-  strongPin.textContent = '📌 Pin (Save)';
-  pPin.appendChild(strongPin);
-  pPin.appendChild(document.createElement('br'));
-  pPin.appendChild(document.createTextNode('Saves a copy of the soul (image) to your local Vault. Pinned items are automatically re-broadcasted when you rejoin the mesh.'));
+  pPin.innerHTML = `<strong>📌 Pin (Save)</strong><br>Saves a soul to your local Vault. Pinned items are protected from decay and re-broadcasted when you join.`;
 
   const pBroad = document.createElement('p');
-  pBroad.style.marginBottom = '10px';
-  const strongBroad = document.createElement('strong');
-  strongBroad.textContent = '✨ Broadcast';
-  pBroad.appendChild(strongBroad);
-  pBroad.appendChild(document.createElement('br'));
-  pBroad.appendChild(document.createTextNode('Uploads a new soul to the mesh. It propagates to connected peers immediately.'));
+  pBroad.style.marginTop = '10px';
+  pBroad.innerHTML = `<strong>✨ Broadcast</strong><br>Uploads a soul to the mesh. It propagates to connected peers immediately.`;
+
   sectionActions.appendChild(h3Act);
   sectionActions.appendChild(pPin);
   sectionActions.appendChild(pBroad);
 
+  // Section 3: Safety
   const sectionSafe = document.createElement('div');
   sectionSafe.className = 'help-section';
   const h3Safe = document.createElement('h3');
-  h3Safe.textContent = '🛡️ Safety & Moderation';
-  const pBurn = document.createElement('p');
-  const strongBurn = document.createElement('strong');
-  strongBurn.textContent = '🔥 Burn (Local Block):';
-  pBurn.appendChild(strongBurn);
-  pBurn.appendChild(document.createElement('br'));
-  pBurn.appendChild(document.createTextNode('Removes the content from your device and blocks it from re-entering. This action is local only—"My Computer, My Castle". It does not delete content from other peers.'));
+  h3Safe.textContent = '🛡️ Sovereign Safety';
 
-  const pRemove = document.createElement('p');
-  pRemove.style.marginTop = '10px';
-  const strongRemove = document.createElement('strong');
-  strongRemove.textContent = '🗑️ Remove (Local):';
-  pRemove.appendChild(strongRemove);
-  pRemove.appendChild(document.createTextNode(' Use the trash icon to remove an item from your view without signaling the network.'));
+  const pBlur = document.createElement('p');
+  pBlur.innerHTML = `<strong>👁️ Blur by Default</strong><br>All incoming souls are blurred. You must click to reveal them.`;
+
+  const pBurn = document.createElement('p');
+  pBurn.style.marginTop = '10px';
+  pBurn.innerHTML = `<strong>🗑️ Remove / Burn</strong><br>Removes content from <em>your</em> device and blacklists it locally. <span style="color:#ff8888">You cannot delete files from other peers.</span>`;
 
   const pReset = document.createElement('p');
   pReset.style.marginTop = '10px';
-  pReset.style.color = '#ff8888';
-  const strongReset = document.createElement('strong');
-  strongReset.textContent = '🔥 ID Reset:';
-  pReset.appendChild(strongReset);
-  pReset.appendChild(document.createTextNode(' Click the flame icon in the header to destroy your identity and start fresh.'));
+  pReset.innerHTML = `<strong>🔥 ID Reset</strong><br>Click the flame icon in the header to destroy your Identity and Vault forever.`;
 
   sectionSafe.appendChild(h3Safe);
+  sectionSafe.appendChild(pBlur);
   sectionSafe.appendChild(pBurn);
-  sectionSafe.appendChild(pRemove);
   sectionSafe.appendChild(pReset);
 
   const closeBtn = document.createElement('button');
@@ -1156,10 +1215,21 @@ function showHelpModal() {
 
   helpModal.appendChild(h2);
   helpModal.appendChild(pIntro);
-  helpModal.appendChild(sectionIdentity);
+  helpModal.appendChild(sectionPhilo);
   helpModal.appendChild(sectionActions);
   helpModal.appendChild(sectionSafe);
   helpModal.appendChild(closeBtn);
 
   lightbox.appendChild(helpModal);
 }
+
+// --- Global Event Listeners ---
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (lightbox.style.display === 'flex') {
+      lightbox.style.display = 'none';
+      // Clear content
+      while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+    }
+  }
+});

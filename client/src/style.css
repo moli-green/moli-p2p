@@ -217,8 +217,10 @@ h1 {
   z-index: 100 !important;
 }
 
-.gallery-item img {
+.gallery-image {
   width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
   display: block;
   transition: filter 0.5s ease;
 
@@ -229,7 +231,12 @@ h1 {
 
   /* Pixel Art Support: Upscale cleanly without blur */
   image-rendering: pixelated;
-  /* image-rendering: crisp-edges;  (Firefox) - Optional */
+}
+
+/* Phase 31: Safety Blur */
+.gallery-image.blurred {
+  filter: blur(20px);
+  cursor: pointer;
 }
 
 /* Hover Overlay */
@@ -239,13 +246,13 @@ h1 {
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, transparent 70%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, transparent 60%);
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity 0.2s;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 1.2rem;
+  padding: 1rem;
   box-sizing: border-box;
   pointer-events: none;
 }
@@ -259,36 +266,6 @@ h1 {
 /* Ensure children are clickable */
 .card-overlay * {
   pointer-events: auto;
-}
-
-/* Persistent Windmill (Low Opacity) */
-/* Windmill Container (Glassmorphism) */
-.windmill-static {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  width: 42px;
-  height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  opacity: 0.3;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  filter: grayscale(1);
-  z-index: 10;
-}
-
-.gallery-item:hover .windmill-static {
-  opacity: 1;
-  filter: none;
-  transform: scale(1.1);
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Ephemeral Decay Effects (Gradual) */
@@ -452,16 +429,7 @@ button:hover {
   margin-top: 8px;
 }
 
-.holder-badge {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 20px;
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  transition: all 0.3s ease;
-}
+
 
 .pin-btn {
   background: rgba(100, 108, 255, 0.2);
@@ -499,228 +467,6 @@ button:hover {
   box-shadow: 0 4px 15px rgba(255, 215, 0, 0.4);
 }
 
-/* Tribute Protocol Styles */
-.tribute-action-btn {
-  background: linear-gradient(135deg, #646cff 0%, #b388ff 100%);
-  box-shadow: 0 0 15px rgba(100, 108, 255, 0.3);
-  border: none;
-  color: white;
-  padding: 6px 14px;
-  font-size: 11px;
-  font-weight: 700;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.tribute-action-btn:hover {
-  transform: translateY(-2px) scale(1.05);
-  box-shadow: 0 0 25px rgba(100, 108, 255, 0.6);
-}
-
-.tribute-modal {
-  background: rgba(20, 20, 25, 0.95);
-  backdrop-filter: blur(30px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
-  padding: 2.5rem;
-  max-width: 500px;
-  width: 90%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
-  position: relative;
-  animation: modal-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes modal-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.9) translateY(30px);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-.tribute-modal h2 {
-  margin-top: 0;
-  font-size: 1.8rem;
-  background: linear-gradient(to right, #fff, #646cff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.manifest-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 16px;
-  padding: 1.5rem;
-  margin-top: 1.5rem;
-}
-
-.manifest-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.tag-badge {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-
-.type-badge {
-  font-size: 0.7rem;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-}
-
-/* Status Badge Styles */
-.status-badge {
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  transition: all 0.3s;
-}
-
-.status-badge.infant {
-  background: rgba(255, 68, 68, 0.1);
-  color: #ff4444;
-  border: 1px solid rgba(255, 68, 68, 0.2);
-}
-
-.status-badge.mature {
-  background: rgba(255, 215, 0, 0.1);
-  color: #ffd700;
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  box-shadow: 0 0 10px rgba(255, 215, 0, 0.1);
-}
-
-/* PoW Button Animation */
-.pledge-support-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.type-badge.DIRECT_TRIBUTE {
-  background: #00c853;
-  color: #000;
-}
-
-.type-badge.NPO_FALLBACK {
-  background: #ff9100;
-  color: #000;
-}
-
-.report-box {
-  font-style: italic;
-  font-size: 0.9rem;
-  opacity: 0.8;
-  line-height: 1.6;
-  margin: 1.5rem 0;
-  padding-left: 1rem;
-  border-left: 2px solid #646cff;
-}
-
-.target-box {
-  text-align: center;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.target-name {
-  font-size: 1.4rem;
-  font-weight: 700;
-  margin: 0.5rem 0 1.5rem 0;
-  color: #fff;
-}
-
-.tribute-go-btn {
-  display: inline-block;
-  background: #646cff;
-  color: white;
-  text-decoration: none;
-  padding: 1rem 2rem;
-  border-radius: 12px;
-  font-weight: 700;
-  transition: all 0.2s;
-}
-
-.tribute-go-btn:hover {
-  background: #535bf2;
-  transform: translateY(-2px);
-  box-shadow: 0 5px 20px rgba(100, 108, 255, 0.4);
-}
-
-/* Verified Tribute Badge */
-/* Verified Tribute Badge Redesign */
-.windmill-static.verified-tribute {
-  opacity: 1 !important;
-  background: rgba(255, 215, 0, 0.15) !important;
-  border: 1px solid rgba(255, 215, 0, 0.5) !important;
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3), inset 0 0 10px rgba(255, 215, 0, 0.2);
-  filter: none !important;
-}
-
-.windmill-static.verified-tribute svg {
-  animation: windmill-rotate 8s linear infinite;
-  filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.8));
-}
-
-.windmill-static.verified-tribute svg path {
-  fill: #ffd700 !important;
-}
-
-@keyframes windmill-rotate {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes gold-glow {
-  0% {
-    transform: scale(1);
-    filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.6));
-  }
-
-  100% {
-    transform: scale(1.05);
-    filter: drop-shadow(0 0 25px rgba(255, 215, 0, 1));
-  }
-}
-
-.pledge-support-btn {
-  background: rgba(255, 215, 0, 0.1);
-  color: #ffd700;
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  padding: 10px;
-  border-radius: 12px;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 0.9rem;
-  transition: all 0.2s;
-  display: none;
-  /* Only show after external link clicked */
-}
-
-.pledge-support-btn:hover {
-  background: rgba(255, 215, 0, 0.2);
-  box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
-}
-
 .burn-action-btn {
   background: rgba(255, 0, 0, 0.1);
   color: #ff4444;
@@ -733,6 +479,20 @@ button:hover {
 
 .burn-action-btn:hover {
   background: rgba(255, 0, 0, 0.3);
+}
+
+.remove-action-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #fff;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+}
+
+.remove-action-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .disclaimer {
@@ -774,12 +534,31 @@ button:hover {
 }
 
 @keyframes shake-pop {
-  0% { transform: scale(0.9) translate(0, 0); opacity: 0; }
-  20% { transform: scale(1.02) translate(-2px, 0); opacity: 1; }
-  40% { transform: scale(1.02) translate(2px, 0); }
-  60% { transform: scale(1.02) translate(-1px, 0); }
-  80% { transform: scale(1.02) translate(1px, 0); }
-  100% { transform: scale(1) translate(0, 0); }
+  0% {
+    transform: scale(0.9) translate(0, 0);
+    opacity: 0;
+  }
+
+  20% {
+    transform: scale(1.02) translate(-2px, 0);
+    opacity: 1;
+  }
+
+  40% {
+    transform: scale(1.02) translate(2px, 0);
+  }
+
+  60% {
+    transform: scale(1.02) translate(-1px, 0);
+  }
+
+  80% {
+    transform: scale(1.02) translate(1px, 0);
+  }
+
+  100% {
+    transform: scale(1) translate(0, 0);
+  }
 }
 
 .danger-icon {
@@ -790,9 +569,20 @@ button:hover {
 }
 
 @keyframes flame-pulse {
-  0% { filter: drop-shadow(0 0 5px rgba(255, 68, 68, 0.4)); transform: scale(1); }
-  50% { filter: drop-shadow(0 0 20px rgba(255, 68, 68, 0.8)); transform: scale(1.1); }
-  100% { filter: drop-shadow(0 0 5px rgba(255, 68, 68, 0.4)); transform: scale(1); }
+  0% {
+    filter: drop-shadow(0 0 5px rgba(255, 68, 68, 0.4));
+    transform: scale(1);
+  }
+
+  50% {
+    filter: drop-shadow(0 0 20px rgba(255, 68, 68, 0.8));
+    transform: scale(1.1);
+  }
+
+  100% {
+    filter: drop-shadow(0 0 5px rgba(255, 68, 68, 0.4));
+    transform: scale(1);
+  }
 }
 
 .danger-actions {
@@ -877,6 +667,43 @@ button:hover {
     font-size: 1.8rem;
     /* Better fit for portrait */
     letter-spacing: -0.5px;
+  }
+
+  /* --- Phase 22: Peeking (Flashlight) --- */
+
+  .gallery-item img.base-layer {
+    position: relative;
+    /* Maintain flow */
+    z-index: 1;
+    width: 100%;
+    display: block;
+    object-fit: cover;
+    transition: filter 0.2s ease;
+  }
+
+  .gallery-item img.peek-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 2;
+    opacity: 0;
+    pointer-events: none;
+    /* Let hover pass through */
+    transition: opacity 0.1s ease-out;
+    /* Clip-path handled by JS */
+  }
+
+  /* Ensure blurred state is ONLY on base layer? */
+  .gallery-item img.base-layer.blurred {
+    filter: blur(20px);
+  }
+
+  /* Adjust card-overlay z-index above peek-layer */
+  .card-overlay {
+    z-index: 10;
   }
 
   .glass-panel {
@@ -1201,4 +1028,42 @@ button:hover {
 .blurred:hover {
   filter: blur(15px) !important;
   /* Slight peek on hover */
+}
+
+/* --- Phase 22: Peeking (Flashlight) --- */
+
+.gallery-item img.base-layer {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  /* Ensure it fills container if absolute? No, relative allows height flow */
+  display: block;
+  object-fit: cover;
+  transition: filter 0.2s ease;
+}
+
+.gallery-item img.peek-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  /* Let hover pass through */
+  transition: opacity 0.1s ease-out;
+  /* Clip-path handled by JS */
+}
+
+/* Ensure blurred state is ONLY on base layer? */
+.gallery-item img.base-layer.blurred {
+  filter: blur(20px);
+}
+
+/* Adjust card-overlay z-index above peek-layer */
+.card-overlay {
+  z-index: 10;
 }

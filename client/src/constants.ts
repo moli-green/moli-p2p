@@ -13,7 +13,7 @@ export const NETWORK_TIMEOUT_MS = 15000;
 
 // Gossip Protocol V1
 export const GOSSIP_TTL = 3;
-export const MAX_PEERS = 6;
+export const MAX_PEERS = 12;
 export const CACHE_SIZE = 100;
 
 // UI Interactions

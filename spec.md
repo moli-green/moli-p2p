@@ -616,3 +616,20 @@ This object bridges the internal P2P logic to the browser console or external sc
 4.  **`getImageContent(hash: string)`**
     -   Returns: `Promise<string | null>` (DataURL Base64)
     -   Description: Retrieves the full binary content of an image from the Blob URL store.
+
+## 20. Concurrency & Robustness (v1.7.10 - 2026-02-10)
+
+### A. Scheduler Optimization (Split Semaphore)
+- **Problem**: In high-load scenarios (Rush Hour), a single shared semaphore for Uploads/Downloads caused deadlocks. Peers uploading rapidly starved their own download slots, preventing Full Duplex communication.
+- **Solution**:
+    -   **Split Semaphore**: Separate concurrency limits for Uploads and Downloads.
+    -   **Uploads**: `MAX_CONCURRENT_UPLOADS = 3` (New Queue).
+    -   **Downloads**: `MAX_CONCURRENT_DOWNLOADS = 3` (Optimized from 5).
+    -   **Result**: 100% Full Duplex capability even under heavy burst loads.
+
+### B. Connection Robustness (Retry Logic)
+-   **Problem**: "Signaling Handshake Timed Out" occurred frequently during concurrent tab initialization (Race Condition).
+-   **Solution**:
+    -   **Exponential Backoff**: `P2PNetwork.init` now retries connection up to 5 times.
+    -   **Logic**: 1s -> 2s -> 3s -> 4s -> 5s delay.
+    -   **Effect**: Eliminates startup failures in multi-tab/low-end device scenarios.

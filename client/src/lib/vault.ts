@@ -37,10 +37,19 @@ export class Vault {
 
     static async save(item: VaultItem): Promise<void> {
         if (!this.db) await this.init();
+        // Safari Compatibility: Convert Blob to ArrayBuffer
+        const buffer = await item.blob.arrayBuffer();
+        const storedItem = {
+            ...item,
+            buffer: buffer,
+            blob: undefined // Do not store blob directly
+        };
+        delete (storedItem as any).blob; // Ensure it's gone
+
         return new Promise((resolve, reject) => {
             const tx = this.db!.transaction(this.STORE_NAME, 'readwrite');
             const store = tx.objectStore(this.STORE_NAME);
-            const request = store.put(item); // keyPath is 'hash' inside item
+            const request = store.put(storedItem);
 
             request.onsuccess = () => {
                 console.log(`[Vault] Saved item: ${item.hash.slice(0, 8)}... (${item.name})`);
@@ -59,11 +68,7 @@ export class Vault {
             const tx = this.db!.transaction(this.STORE_NAME, 'readwrite');
             const store = tx.objectStore(this.STORE_NAME);
             const request = store.delete(hash);
-
-            request.onsuccess = () => {
-                console.log(`[Vault] Removed item: ${hash.slice(0, 8)}...`);
-                resolve();
-            };
+            request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
         });
     }
@@ -76,7 +81,15 @@ export class Vault {
             const request = store.getAll();
 
             request.onsuccess = () => {
-                const items = request.result as VaultItem[];
+                const results = request.result;
+                // Safari Compatibility: Reconstruct Blob from ArrayBuffer
+                const items = results.map((data: any) => {
+                    if (data.buffer) {
+                        data.blob = new Blob([data.buffer], { type: data.mime });
+                        // data.buffer = undefined; // Optional: free memory?
+                    }
+                    return data as VaultItem;
+                });
                 console.log(`[Vault] Loaded ${items.length} items from persistence.`);
                 resolve(items);
             };
@@ -84,21 +97,18 @@ export class Vault {
         });
     }
 
-    // Helper: Update ONLY the receipt if the item exists (Avoid rewriting heavy blob)
     static async updateReceipt(hash: string, receipt: any): Promise<void> {
         if (!this.db) await this.init();
-        // Since we need to update one field, we usually fetch -> update -> put.
-        // Or structured update. Since it's keyPath object store, we fetch-modify-put.
         return new Promise((resolve, reject) => {
             const tx = this.db!.transaction(this.STORE_NAME, 'readwrite');
             const store = tx.objectStore(this.STORE_NAME);
 
             const getReq = store.get(hash);
             getReq.onsuccess = () => {
-                const data = getReq.result as VaultItem;
+                const data = getReq.result;
                 if (!data) {
                     console.warn(`[Vault] Cannot update receipt, item not found: ${hash.slice(0, 8)}`);
-                    resolve(); // Not an error, maybe user unpinned it.
+                    resolve();
                     return;
                 }
                 data.receipt = receipt;

@@ -1,6 +1,8 @@
 import type { SignalMessage } from './types';
 import { PeerIdentity } from './PeerIdentity';
 
+
+
 interface FileOffer {
     type: 'offer-file';
     transferId: string;
@@ -9,8 +11,6 @@ interface FileOffer {
     mime: string;
     hash: string;
     isPinned?: boolean;
-    tributeTag?: string;
-    receipt?: any;
     ttl?: number; // Gossip V1
 }
 
@@ -21,12 +21,9 @@ interface FileMetadata {
     size: number;
     mime: string;
     hash: string;
-    publicKey?: string; // Base64 SPKI
-    signature?: string; // Base64
+    originalSenderId?: string; // Phase 31: Relay Integrity
     identityCreatedAt?: number;
     isPinned?: boolean;
-    tributeTag?: string;
-    receipt?: any;
     ttl?: number; // Gossip V1
 }
 
@@ -45,6 +42,17 @@ export class PeerSession {
 
     public get sessionPeerId(): string {
         return this._peerId;
+    }
+
+    public get isConnectionFailed(): boolean {
+        return this.pc.connectionState === 'failed' || this.pc.connectionState === 'disconnected' || this.pc.connectionState === 'closed';
+    }
+
+    public close() {
+        console.log(`[${this.myId}] Closing session with ${this.peerId}`);
+        this.dc?.close();
+        this.pc.close();
+        this.stopTransferTimeout();
     }
 
     // Receiver State
@@ -71,10 +79,11 @@ export class PeerSession {
         private _peerId: string, // SessionID
         private identity: PeerIdentity,
         private sendSignal: (msg: SignalMessage) => void,
-        private onImage: (blob: Blob, peerId: string, isPinned?: boolean, publicKey?: string, name?: string, tributeTag?: string, receipt?: any, ttl?: number) => void,
+        private onImage: (blob: Blob, peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string) => void,
         private onTransferError: (transferId: string) => void, // NEW: Error Feedback
         private network: { canReceiveFrom: (peerId: string) => boolean },
         private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
+        private onFileRequested?: (hash: string) => void, // NEW: Pull Request Callback
         realPeerId?: string, // Deterministic Cryptographic ID
         activeIceServers?: RTCIceServer[] // Dynamic ICE Configuration
     ) {
@@ -258,6 +267,12 @@ export class PeerSession {
                     }
                     this.pendingPullRequests.delete(msg.transferId); // Consume the token
 
+                    // NEW: Clear Pull Timeout (Success)
+                    if (this.pullTimeouts.has(msg.transferId)) {
+                        clearTimeout(this.pullTimeouts.get(msg.transferId));
+                        this.pullTimeouts.delete(msg.transferId);
+                    }
+
                     // Physical Defense: Metadata Size Guard
                     if (msg.size > MAX_FILE_SIZE) {
                         console.error(`[${this.myId}] SECURITY ALERT: Rejected meta for ${msg.name} (declared ${msg.size} > ${MAX_FILE_SIZE})`);
@@ -273,42 +288,11 @@ export class PeerSession {
                         return;
                     }
 
-                    // 2. Maturity Gate (Identity Age) - REMOVED (Deregulation v1.7.5)
-                    const identityAge = msg.identityCreatedAt ? Date.now() - msg.identityCreatedAt : 0;
-
-
-                    // 3. Cryptographic Identity Check (v12.0)
-                    if (msg.publicKey && msg.signature && msg.identityCreatedAt) {
-                        try {
-                            const spki = Uint8Array.from(atob(msg.publicKey), c => c.charCodeAt(0)).buffer;
-                            const pubKey = await this.identity.importPublicKey(spki);
-                            const isValid = await this.identity.verifyMetadata(pubKey, msg.signature, msg.name, msg.size, msg.hash, msg.identityCreatedAt, msg.isPinned || false);
-
-                            if (!isValid) {
-                                console.error(`[${this.myId}] CRYPTO ALERT: Invalid signature from ${this.peerId} for ${msg.name}`);
-                                this.currentMeta = null;
-                                this.onTransferError(msg.transferId || 'unknown'); // NOTIFY
-                                return;
-                            }
-                            console.log(`[${this.myId}] Identity Verified (Age: ${Math.floor(identityAge / 3600000)}h): ${msg.name} Pinned: ${msg.isPinned}`);
-                        } catch (err) {
-                            console.error(`[${this.myId}] Crypto error during verification:`, err);
-                            this.currentMeta = null;
-                            this.onTransferError(msg.transferId || 'unknown'); // NOTIFY
-                            return;
-                        }
-                    } else {
-                        console.warn(`[${this.myId}] Unsigned or un-dated metadata received from ${this.peerId} (v12.0 requirement missing)`);
-                        this.currentMeta = null;
-                        this.onTransferError(msg.transferId || 'unknown'); // NOTIFY
-                        return;
-                    }
-
-                    // Safety check: if already receiving, previous one was interrupted
-                    if (this.currentMeta && this.receivedSize < this.currentMeta.size) {
-                        console.error(`[${this.myId}] INTERRUPTED: Received new meta while ${this.currentMeta.name} was incomplete (${this.receivedSize}/${this.currentMeta.size})`);
-                        this.onTransferError(this.currentMeta.transferId); // NOTIFY OLD
-                    }
+                    // 3. Cryptographic Identity Check (Simplified to just Age/Pin)
+                    // We removed signature verification as part of Phase 30 Cleanup.
+                    // We still pass identityCreatedAt for trust age, but don't verify it cryptographically per-file.
+                    // This is a trade-off for simplicity.
+                    // The PeerIdentity still exists for stable IDs.
 
                     console.log(`[${this.myId}] Starting Receive: ${msg.name} (${msg.size} bytes)`);
                     this.currentMeta = msg;
@@ -319,14 +303,11 @@ export class PeerSession {
                     // Physical Defense: Offer Size Guard
                     if (msg.size > MAX_FILE_SIZE) {
                         console.warn(`[${this.myId}] Ignoring oversized file offer: ${msg.name} (${msg.size} bytes)`);
-                        // Note: offer-file doesn't consume a slot yet in the new Pull model (?)
-                        // Actually it does NOT consume a slot until Pull Request is sent.
-                        // But if we reject here, we should probably ignore it silently or notify if logic demanded.
-                        // For now, silent ignore is fine as no slot is held.
                         return;
                     }
                     console.log(`[${this.myId}] Received FILE OFFER from ${this.peerId}: ${msg.name} Pinned: ${msg.isPinned}`);
                     this.onSessionEvent?.('offer-file', this, msg);
+
                 } else if (msg.type === 'pull-request') {
                     if (this.currentOfferedTransferId === msg.transferId && this.pullResolver) {
                         console.log(`[${this.myId}] Received PULL REQUEST for ${msg.transferId}, starting send...`);
@@ -336,14 +317,23 @@ export class PeerSession {
                 } else if (msg.type === 'sync-request') {
                     console.log(`[${this.myId}] Received SYNC REQUEST from ${this.peerId}`);
                     this.onSessionEvent?.('sync-request', this);
+
                 } else if (msg.type === 'inventory') {
                     console.log(`[${this.myId}] Received INVENTORY from ${this.peerId}: ${(msg.hashes || []).length} images`);
                     this.onSessionEvent?.('inventory', this, msg.hashes);
+
+                } else if (msg.type === 'request-file') {
+                    console.log(`[${this.myId}] Received FILE REQUEST for hash ${msg.hash} from ${this.peerId}`);
+                    this.onFileRequested?.(msg.hash);
+
                 } else if (msg.type === 'burn') {
                     // POLICY: Sakoku (Lockdown)
-                    // We ignore all external burn commands. My Computer, My Castle.
                     console.log(`[Burn] IGNORED external burn signal from ${this.peerId}. (Sakoku Policy)`);
                     return;
+                } else if (msg.type === 'ping') {
+                    this.handlePing();
+                } else if (msg.type === 'pong') {
+                    this.handlePong();
                 }
             } catch (e) {
                 console.error(`[${this.myId}] Error handling data message from ${this.peerId}:`, e, data);
@@ -362,7 +352,6 @@ export class PeerSession {
             this.startTransferTimeout(); // RESET TIMER (keep alive)
 
             // Physical Defense: Chunk Overflow Protection
-            // DeclaredSize + 16KB (slack) OR Global Hard Limit
             const overflowLimit = Math.min(this.currentMeta.size + 16384, MAX_FILE_SIZE + 16384);
             if (this.receivedSize > overflowLimit) {
                 console.error(`[${this.myId}] SECURITY ALERT: Chunk overflow detected for ${this.currentMeta.name}. Aborting transfer. (Received ${this.receivedSize} > Limit ${overflowLimit})`);
@@ -381,7 +370,6 @@ export class PeerSession {
                 this.stopTransferTimeout(); // STOP TIMER
 
                 // SECURITY: Integrity Check (Hash-on-Receive)
-                // Prevent Bait-and-Switch attacks by relays
                 const blob = new Blob(this.receivedBuffers, { type: this.currentMeta.mime });
                 const buffer = await blob.arrayBuffer();
                 const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
@@ -390,14 +378,19 @@ export class PeerSession {
 
                 if (computedHash !== this.currentMeta.hash) {
                     console.error(`[${this.myId}] SECURITY ALERT: Hash Mismatch! Declared: ${this.currentMeta.hash}, Computed: ${computedHash}. Discarding data.`);
-                    // We DO NOT call onImage. The data is compromised or corrupted.
                     this.onTransferError(this.currentMeta.transferId); // NOTIFY
                     this.cleanupTransfer();
                     return;
                 }
 
                 console.log(`[${this.myId}] Integrity Verified. Hash matches.`);
-                this.onImage(blob, this.peerId, this.currentMeta.isPinned, this.currentMeta.publicKey, this.currentMeta.name, this.currentMeta.tributeTag, this.currentMeta.receipt, this.currentMeta.ttl);
+                // CRITICAL FOR RELAY: Attach hash to blob so P2PNetwork can read it for Gossip
+                (blob as any).fileHash = this.currentMeta.hash;
+
+                // Phase 31: Pass Original Sender
+                const originalSender = this.currentMeta.originalSenderId || this.peerId;
+
+                this.onImage(blob, this.peerId, this.currentMeta.isPinned, this.currentMeta.name, this.currentMeta.ttl, originalSender);
 
                 // Reset
                 this.cleanupTransfer();
@@ -405,20 +398,31 @@ export class PeerSession {
         }
     }
 
-    public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, tributeTag?: string, receipt?: any, ttl?: number) {
+    public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl?: number, originalSenderId?: string) {
         (blob as any).fileHash = hash;
         (blob as any).isPinned = isPinned;
         (blob as any).fileName = name || (blob as File).name || 'image.png';
-        (blob as any).tributeTag = tributeTag;
-        (blob as any).receipt = receipt;
         (blob as any).ttl = ttl;
+        (blob as any).originalSenderId = originalSenderId; // Store for executeSend
         this.sendQueue.push(blob);
         this.processQueue();
     }
 
+    // NEW: Request File via Hash (Pull)
+    public requestFile(hash: string) {
+        if (this.dc && this.dc.readyState === 'open') {
+            console.log(`[${this.myId}] Requesting file ${hash.substring(0, 8)}... from ${this.peerId}`);
+            this.dc.send(JSON.stringify({ type: 'request-file', hash }));
+        }
+    }
+
     private async processQueue() {
         if (this.isSending || this.sendQueue.length === 0) return;
-        if (!this.dc || this.dc.readyState !== 'open') return;
+
+        if (!this.dc || this.dc.readyState !== 'open') {
+            console.warn(`[${this.myId}] processQueue: DC closed, cannot send.`);
+            return;
+        }
 
         this.isSending = true;
         const blob = this.sendQueue.shift()!;
@@ -440,10 +444,10 @@ export class PeerSession {
         const transferId = Math.random().toString(36).substring(2, 11);
         const hash = (blob as any).fileHash || '';
         const isPinned = (blob as any).isPinned || false;
-        const tributeTag = (blob as any).tributeTag;
-        const receipt = (blob as any).receipt;
         const ttl = (blob as any).ttl; // Could be undefined (new broadcast) or number (relay)
-        console.log(`[${this.myId}] Offering Image to ${this.peerId}: ${totalSize} bytes (${transferId}) Pinned: ${isPinned}`);
+        const originalSenderId = (blob as any).originalSenderId; // Phase 31
+
+        console.log(`[${this.myId}] Offering Image to ${this.peerId}: ${totalSize} bytes (${transferId}) Pinned: ${isPinned} Orig: ${originalSenderId}`);
 
         // 1. Send Offer
         const offer: FileOffer = {
@@ -454,8 +458,6 @@ export class PeerSession {
             mime: blob.type,
             hash,
             isPinned,
-            tributeTag,
-            receipt,
             ttl,
         };
         this.currentOfferedTransferId = transferId;
@@ -472,9 +474,6 @@ export class PeerSession {
         });
 
         // 3. Send Metadata (Actual start of binary)
-        const signature = await this.identity.signMetadata(offer.name, totalSize, hash, isPinned);
-        const publicKeyB64 = this.identity.publicKeySpki ? btoa(String.fromCharCode(...new Uint8Array(this.identity.publicKeySpki))) : undefined;
-
         const meta: FileMetadata = {
             type: 'meta',
             transferId,
@@ -482,18 +481,15 @@ export class PeerSession {
             size: totalSize,
             mime: offer.mime,
             hash,
-            publicKey: publicKeyB64,
-            signature,
+            originalSenderId, // Phase 31: Include Source
             identityCreatedAt: this.identity.createdAt,
             isPinned,
-            tributeTag,
-            receipt,
             ttl,
         };
         this.dc?.send(JSON.stringify(meta));
 
-        // 4. Send Chunks
         const buffer = await blob.arrayBuffer();
+        // const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
         let offset = 0;
 
         return new Promise<void>((resolve, reject) => {
@@ -537,13 +533,63 @@ export class PeerSession {
         }
     }
 
+    // State for Pull Timeouts (Receiver Side)
+    private pullTimeouts = new Map<string, any>();
+
+    // NEW: Request File via Hash (Pull)
     public pullFile(transferId: string) {
         if (this.dc && this.dc.readyState === 'open') {
             console.log(`[${this.myId}] Sending PULL REQUEST for ${transferId} to ${this.peerId}`);
-            this.pendingPullRequests.add(transferId); // Register expectation
+
+            // Set Timeout to release slot if peer ignores request
+            if (this.pullTimeouts.has(transferId)) clearTimeout(this.pullTimeouts.get(transferId));
+
+            const timeout = setTimeout(() => {
+                console.warn(`[${this.myId}] Pull Request TIMEOUT for ${transferId}. Peer did not respond.`);
+                this.onTransferError(transferId); // Release Slot
+                this.pullTimeouts.delete(transferId);
+            }, 15000); // 15s Timeout
+
+            this.pullTimeouts.set(transferId, timeout);
+
+            this.pendingPullRequests.add(transferId);
             this.dc.send(JSON.stringify({ type: 'pull-request', transferId }));
+        } else {
+            // Immediate error if DC not open
+            this.onTransferError(transferId);
         }
     }
+
+    // Heartbeat Logic
+    public lastSeen: number = Date.now();
+
+    public sendPing() {
+        if (this.dc && this.dc.readyState === 'open') {
+            try {
+                this.dc.send(JSON.stringify({ type: 'ping' }));
+            } catch (e) {
+                console.warn(`[${this.myId}] Failed to send PING to ${this.peerId}`, e);
+            }
+        }
+    }
+
+    private handlePing() {
+        if (this.dc && this.dc.readyState === 'open') {
+            try {
+                this.dc.send(JSON.stringify({ type: 'pong' }));
+                this.lastSeen = Date.now(); // Update on ping too
+            } catch (e) {
+                console.warn(`[${this.myId}] Failed to send PONG to ${this.peerId}`, e);
+            }
+        }
+    }
+
+    private handlePong() {
+        this.lastSeen = Date.now();
+        // console.log(`[${this.myId}] Pong received from ${this.peerId}`);
+    }
+
+
 
     // Burn Signal removed (Sakoku Policy)
     // public sendBurnSignal(...) {}

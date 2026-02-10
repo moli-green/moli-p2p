@@ -8,20 +8,22 @@ This is not a social network. It is not a cloud storage service. It is a digital
 
 ## 1. The Philosophy: Campfire vs. Library
 
+## 1. The Philosophy: Campfire vs. Library
+
 Most apps (Instagram, X, Discord) are like **Libraries**.
 You upload a photo, and it is stored on a server forever. It is indexed, analyzed by AI, and sold to advertisers. The "Platform" owns your memory.
 
 Moli P2P is a **Campfire**.
 The images you see exist only because someone is currently "holding" them in their browser.
--   If you close your laptop, your fire goes out.
--   If everyone leaves the room, the story disappears.
--   **Presence is Storage.** The gallery lives only as long as we watch it together.
+-   **Ephemeral Capacity**: Your browser holds the latest **50 souls**. When new ones arrive, the oldest unpinned ones are extinguished.
+-   **Presence is Storage**: The gallery lives only as long as we watch it together.
+-   **Digital Natural Selection**: Good content is Pinned and survives. Noise decays.
 
 ---
 
 ## 2. Your Identity: "The Soul"
 
-When you open Moli P2P, you are born.
+When you open Moli P2P, you are born as a **Sovereign Soul**.
 There are no accounts. No passwords. No email required.
 
 -   **Your ID**: A cryptographic key generated instantly in your browser.
@@ -48,8 +50,8 @@ If you see something beautiful, click **Pin**.
 -   When you return to the campfire later, you automatically re-broadcast your Pinned memories to new people.
 -   *You keep the fire burning.*
 
-### 🔥 Burn (The Rejection)
-If you see something you hate, click **Burn**.
+### 🗑️ Burn / Remove (The Rejection)
+If you see something you hate, click **Remove**.
 -   This removes the image from **your** view.
 -   It adds the content's hash to your local **Blacklist**.
 -   **Important**: In Moli P2P, you cannot delete someone else's file from *their* computer. You can only clean *your own* castle. This is "Sovereignty."
@@ -61,8 +63,8 @@ If you see something you hate, click **Burn**.
 Moli P2P enforces a strict **Sakoku (Isolation)** policy.
 
 -   **No one can delete your data.** (No specialized moderators)
--   **You cannot delete theirs.**
--   **Visual Safety**: By default, new images may appear **blurred**. This is your shield. You must click to reveal them. This ensures you only see what you consent to see.
+-   **You cannot delete theirs.** (No censorship tools)
+-   **Visual Safety (Blur)**: By default, ALL incoming images are **blurred**. This is your shield. You must click to reveal them. This ensures you only see what you consent to see.
 
 ---
 

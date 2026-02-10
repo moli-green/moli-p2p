@@ -18,14 +18,39 @@ export class P2PNetwork {
     private activeIceServers: RTCIceServer[] | undefined;
 
     constructor(
-        private onImageReceivedCallback: (blob: Blob, peerId: string, isPinned?: boolean, publicKey?: string, name?: string, tributeTag?: string, receipt?: any, ttl?: number) => void,
-        private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
-        private onPeerCountChanged?: (count: number) => void,
-        private onTransferError?: (session: PeerSession, transferId: string) => void,
-        private onInventoryReceived?: (peerId: string, hashes: string[]) => void,
-        private onOfferFile?: (session: PeerSession, data: any) => void
+        private onImage: (blob: Blob, peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string) => void,
+        private onEvent: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
+        private onPeerCountChange: (count: number) => void,
+        private onTransferError: (session: PeerSession, transferId: string) => void,
+        private onInventory: (peerId: string, hashes: string[]) => void,
+        private onOfferFile: (session: PeerSession, data: any) => void,
+        private onFileRequested: (session: PeerSession, hash: string) => void,
     ) {
         this.identity = new PeerIdentity();
+        this.loadBlacklist();
+    }
+
+    private loadBlacklist() {
+        try {
+            const raw = localStorage.getItem('moli_blacklist');
+            if (raw) {
+                const list = JSON.parse(raw);
+                if (Array.isArray(list)) {
+                    this.blacklist = new Set(list);
+                    console.log(`[Guard] Loaded ${this.blacklist.size} blacklisted items.`);
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load blacklist', e);
+        }
+    }
+
+    private saveBlacklist() {
+        try {
+            localStorage.setItem('moli_blacklist', JSON.stringify(Array.from(this.blacklist)));
+        } catch (e) {
+            console.error('Failed to save blacklist', e);
+        }
     }
 
     private handleTransferError(peerId: string, transferId: string) {
@@ -36,8 +61,15 @@ export class P2PNetwork {
         }
     }
 
+    private handleFileRequest(peerId: string, hash: string) {
+        const session = this.sessions.get(peerId);
+        if (session) {
+            this.onFileRequested?.(session, hash);
+        }
+    }
+
     // Wrapper to handle Relay + UI Callback
-    private onImageReceived = (blob: Blob, pId: string, pinned?: boolean, pub?: string, name?: string, tribute?: string, receipt?: any, ttl?: number) => {
+    private onImageReceived = (blob: Blob, pId: string, pinned?: boolean, name?: string, ttl?: number, originalSenderId?: string) => {
         // Gossip V1: Relay Logic
         const hash = (blob as any).fileHash as string | undefined;
         if (hash && this.seenMessages.has(hash)) {
@@ -53,8 +85,8 @@ export class P2PNetwork {
             }
         }
 
-        // Trigger UI
-        this.onImageReceivedCallback(blob, pId, pinned, pub, name, tribute, receipt, ttl);
+        // Trigger UI (Simplified)
+        this.onImage(blob, pId, pinned, name, ttl, originalSenderId);
 
         // Relay
         const currentTtl = typeof ttl === 'number' ? ttl : 0;
@@ -66,20 +98,11 @@ export class P2PNetwork {
 
             const safeHash = hash || '';
             console.log(`[Gossip] Relaying ${name || 'image'} to mesh (TTL: ${nextTtl}, Orig: ${currentTtl})`);
-            // Find sender session to get senderId (?)
-            // Actually broadcastImage excludes by PeerID (SessionID).
-            // We need to pass the source SessionID to exclude it.
-            // pId here is likely the PeerID (friendly name or real ID), not session ID?
-            // checking PeerSession... "this.onImage(..., this.peerId, ...)" -> realPeerId.
-            // broadcastImage `excludePeerId` matches `session.sessionPeerId`.
-            // We need the sessionID of the sender.
-            // `onImage` callback signature in PeerSession doesn't pass sessionID.
-            // This is a flaw. But `broadcastImage` logic uses `sessionPeerId`.
-            // If pId is unique enough...
-            // Actually `session.peerId` getter returns `realPeerId`.
-            // We might reflect back if we don't exclude properly.
-            // But since we track `seenMessages`, reflection is handled by hash check.
-            this.broadcastImage(blob, safeHash, pinned, name, tribute, receipt, nextTtl, undefined);
+
+            // Relay to all except sender (handled by hash check mostly, but optimize?)
+            // We don't have sender SessionID here easily without tracking it up stack.
+            // But 'hash' check handles cycles.
+            this.broadcastImage(blob, safeHash, pinned, name, nextTtl, undefined, originalSenderId);
         }
     }
 
@@ -89,12 +112,16 @@ export class P2PNetwork {
 
     public addToBlacklist(hash: string): void {
         this.blacklist.add(hash);
+        this.saveBlacklist();
+        console.log(`[Guard] Added ${hash} to blacklist (Total: ${this.blacklist.size})`);
     }
 
     public canReceiveFrom(peerId: string): boolean {
         const now = Date.now();
-        const MAX_TOKENS = 15;
-        const REFILL_RATE = 10 * 60 * 1000; // 1 token every 10 minutes
+        // Stability Tuning: Increase burst limit for Initial Sync (Gallery Size)
+        const MAX_TOKENS = 100;
+        // Refill 1 token every 10 seconds (Sustainable 6 msg/min)
+        const REFILL_RATE = 10 * 1000;
 
         let state = this.bucketRegistry.get(peerId);
         if (!state) {
@@ -131,6 +158,26 @@ export class P2PNetwork {
         // Pre-load locally (legacy/fallback)
         await this.identity.init();
 
+        let attempt = 0;
+        const maxAttempts = 5;
+
+        while (attempt < maxAttempts) {
+            try {
+                if (attempt > 0) console.log(`[P2P] Initialization attempt ${attempt + 1}/${maxAttempts}`);
+                await this.connect();
+                console.log('[P2P] Initialization Successful');
+                return;
+            } catch (e: any) {
+                attempt++;
+                if (attempt >= maxAttempts) throw e;
+                const delay = 1000 * attempt;
+                console.warn(`[P2P] Connection failed: ${e.message || e}. Retrying in ${delay / 1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    private connect(): Promise<void> {
         return new Promise((resolve, reject) => {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const host = window.location.hostname === 'localhost' ? 'localhost:9090' : window.location.host;
@@ -141,6 +188,7 @@ export class P2PNetwork {
 
             // Safety Timeout
             const timeout = setTimeout(() => {
+                if (this.ws) this.ws.close();
                 reject(new Error("Signaling Handshake Timed Out"));
             }, 5000);
 
@@ -161,10 +209,34 @@ export class P2PNetwork {
                         clearTimeout(timeout);
                         resolve(); // Ready to start
 
-                        // Start Broadcast Loop
+                        // Start Broadcast Loop & Health Check
                         this.broadcastJoin();
                         setInterval(() => {
                             this.broadcastJoin();
+
+                            // Periodic Health Check & Heartbeat
+                            const now = Date.now();
+                            this.sessions.forEach((session, id) => {
+                                // 1. Connection State Check
+                                if (session.isConnectionFailed) {
+                                    console.log(`[P2P] Health Check: Pruning failed session ${id}`);
+                                    session.close();
+                                    this.sessions.delete(id);
+                                    return;
+                                }
+
+                                // 2. Application Heartbeat Check
+                                // If we haven't seen a PONG/Message in 45s, kill it.
+                                if (now - session.lastSeen > 45000) {
+                                    console.warn(`[P2P] Heartbeat Timeout: No activity from ${id} in 45s. Closing.`);
+                                    session.close();
+                                    this.sessions.delete(id);
+                                    return;
+                                }
+
+                                // 3. Keep-Alive Ping
+                                session.sendPing();
+                            });
                         }, 10000);
                         return;
                     }
@@ -183,9 +255,19 @@ export class P2PNetwork {
                 console.error("WS Error", e);
             };
 
+            this.ws.onclose = () => {
+                console.log('[P2P] WS Closed');
+                // Auto-reject if trying to connect
+                if (!this.myId) {
+                    // If we haven't got ID yet, it's a failure.
+                }
+            };
+
             window.addEventListener('beforeunload', () => {
                 this.broadcast({ type: 'leave', senderId: this.sessionId });
-                this.ws.close();
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.close();
+                }
             });
         });
     }
@@ -222,27 +304,38 @@ export class P2PNetwork {
         }
 
         let session = this.sessions.get(senderId);
+
+        // Self-Healing
+        if (session && msg.type === 'join') {
+            if (session.isConnectionFailed) {
+                console.log(`[P2P] Self-Healing: Detected zombie session for ${senderId}. Closing and resetting.`);
+                session.close();
+                this.sessions.delete(senderId);
+                session = undefined; // Force recreation
+            } else if (!session.isConnected) {
+                // Also handle case where ICE is checking/new but maybe stuck?
+            }
+        }
+
         if (!session) {
             // Gossip V1: Connection Limiter
-            // Allow specific target replies (handshake completion) but limit random broadcast joins
             const isTargeted = !!msg.targetId;
             if (!isTargeted && this.connectedPeerCount >= MAX_PEERS) {
-                // Ignore random joins if full
                 return;
             }
 
-            // const peerId = this.sessionToPeer.get(senderId) || senderId; // Unused
             session = new PeerSession(
                 this.sessionId,
                 senderId,
                 this.identity,
                 (m) => this.broadcast(m),
                 this.onImageReceived,
-                (tId) => this.handleTransferError(senderId, tId), // NEW: Safe Callback
-                this, // Network Logic (canReceiveFrom)
+                (tId) => this.handleTransferError(senderId, tId),
+                this,
                 (type, s, d) => this.handleSessionEvent(type, s, d),
+                (hash) => this.handleFileRequest(senderId, hash),
                 undefined,
-                this.activeIceServers // Inject Config
+                this.activeIceServers
             );
             this.sessions.set(senderId, session);
             session.start();
@@ -263,7 +356,7 @@ export class P2PNetwork {
         return count;
     }
 
-    public broadcastImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, tributeTag?: string, receipt?: any, ttl: number = GOSSIP_TTL, excludePeerId?: string) {
+    public broadcastImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl: number = GOSSIP_TTL, excludePeerId?: string, originalSenderId?: string) {
         // Add to own seen messages to prevent reflection
         if (!this.seenMessages.has(hash)) {
             this.seenMessages.add(hash);
@@ -275,46 +368,54 @@ export class P2PNetwork {
         }
 
         let sentCount = 0;
+        // Logic: Pass originalSenderId. If undefined (origin), use myId in peerSession.sendImage?
+        // Actually PeerSession.sendImage will handle it if we pass it. 
+        // We should pass myId as originalSenderId if it's new.
+        const effectiveSender = originalSenderId || this.myId;
+
         this.sessions.forEach(session => {
             if (session.isConnected && session.sessionPeerId !== excludePeerId) {
                 // Pass TTL to Send
-                session.sendImage(blob, hash, isPinned, name, tributeTag, receipt, ttl);
+                session.sendImage(blob, hash, isPinned, name, ttl, effectiveSender);
                 sentCount++;
             }
         });
+
         if (sentCount === 0) {
             console.warn('No active peers connected (or all excluded). Image not sent.');
         } else {
             console.log(`Sending image to ${sentCount} peers (TTL: ${ttl}).`);
         }
-    }
 
-    // Burn Relay Removed (Sakoku Policy)
-    // public broadcastBurn(...) {}
+        return sentCount;
+    }
 
     private handleSessionEvent(type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) {
         if (type === 'connected') {
-            this.onPeerCountChanged?.(this.connectedPeerCount);
+            this.onPeerCountChange?.(this.connectedPeerCount);
             console.log(`[Sync] DataChannel connected with ${session.sessionPeerId} (Peer: ${session.peerId}), requesting sync...`);
             session.requestSync();
         } else if (type === 'sync-request') {
-            this.onSessionEvent?.('sync-request', session);
+            this.onEvent?.('sync-request', session);
         } else if (type === 'inventory') {
             const hashes = data as string[];
-            this.onSessionEvent?.('inventory', session, hashes);
-            this.onInventoryReceived?.(session.peerId, hashes);
+            this.onEvent?.('inventory', session, hashes);
+            this.onInventory?.(session.peerId, hashes);
         } else if (type === 'offer-file') {
-            this.onSessionEvent?.('offer-file', session, data);
+            this.onEvent?.('offer-file', session, data);
             this.onOfferFile?.(session, data); // Specific Callback
         } else if (type === 'burn') {
             // POLICY: Sakoku (Local Only)
-            // Do not relay.
             console.log(`[Network] Burn event for ${data.hash} handled locally. NOT broadcasting.`);
         }
     }
 
-    // Callbacks
-    // Removed explicit setters in favor of constructor injection to ensure types safety
-
-    // Burn Callback Removed (Sakoku Policy)
+    public close() {
+        console.log("[P2P] Closing Network...");
+        this.sessions.forEach(session => session.close());
+        this.sessions.clear();
+        if (this.ws) {
+            this.ws.close();
+        }
+    }
 }

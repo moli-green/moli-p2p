@@ -19,6 +19,8 @@
 /gateway/.env
 /gateway/*.db
 /gateway/*.db-journal
+/scripts/node_modules/
+**/node_modules/
 
 # General
 TODO.md
@@ -44,3 +46,7 @@ deploy.config
 # 不要なGitの痕跡（マトリョーシカ防止）
 **/.git
 
+# テスト画像
+test_images/
+テストシナリオ.txt
+/client/public/test_batch/

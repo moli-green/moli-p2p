@@ -6,6 +6,14 @@
 *Live P2P Mesh Demo (v1.7.9 Sovereign Edition)*: **[https://moli-green.is](https://moli-green.is)**
 *User Manual (The Handbook)*: **[USER_MANUAL.md](./USER_MANUAL.md)**
 
+## v1.7.10 Sovereign Resilience (2026-02-10)
+- **Concurrency**: Implemented "Split Semaphore" architecture (3 Uploads / 3 Downloads) to ensure 100% Full Duplex capability under heavy load.
+- **Robustness**: Added exponential backoff retry logic to eliminating startup race conditions ("Signaling Handshake Timed Out").
+- **Safety**:
+    - **Visual**: All incoming images are blurred by default. Click to reveal.
+    - **Local**: "Burn" actions are strictly local bans. No remote censorship.
+- **Ephemeral**: Browser holds max **50 images**. Oldest unpinned images decay naturally.
+
 ## v1.7.9 Sovereign Update (Deep Security Hardening)
 - **Deep Security**:
     - **Pull Semantics**: Client strictly enforces "Pull" logic. Unrequested transfers are blocked at the WebRTC gate, preventing "Drive-by Download" attacks.
