@@ -6,6 +6,7 @@ export interface VaultItem {
     mime: string;
     tributeTag?: string;
     receipt?: any;
+    originalSenderId?: string;
     timestamp: number;
 }
 

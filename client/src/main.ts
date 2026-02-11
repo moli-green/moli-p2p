@@ -196,6 +196,7 @@ interface ImageItem {
   timestamp: number;
   element: HTMLElement;
   caption?: string;
+  originalSenderId?: string;
 }
 
 const imageStore: ImageItem[] = [];
@@ -603,6 +604,7 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
             size: blob.size,
             mime: blob.type,
             timestamp: item.timestamp,
+            originalSenderId: item.originalSenderId,
           });
           showToast("Pinned to Vault", "success");
         } else {
@@ -661,7 +663,7 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
     container.appendChild(overlay);
 
     // Store Item
-    const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, caption: name };
+    const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, caption: name, originalSenderId };
     imageStore.push(newItem);
 
     renderQueue.push(newItem);
@@ -684,12 +686,18 @@ async function initVaultAndLoad(): Promise<void> {
     console.log(`[Vault] Restoring ${pinnedItems.length} pinned souls...`);
     for (const item of pinnedItems) {
       if (!imageStore.some(i => i.hash === item.hash)) {
+        // Fix: Determine isLocal based on originalSenderId vs myId
+        // If originalSenderId is missing, assume it's legacy local or we don't know (treat as local to be safe/consistent with old behavior)
+        // If originalSenderId exists and != myId, it is NOT local.
+        const isLegacyOrOwn = !item.originalSenderId || item.originalSenderId === network.myId;
+
         await addImageToGallery(
           item.blob,
-          true,
+          isLegacyOrOwn, // isLocal
           undefined,
           true,
           item.name,
+          item.originalSenderId
         );
       }
     }
@@ -745,10 +753,10 @@ async function performLocalUpload(file: Blob, _name: string = 'image.png'): Prom
 // --- Identity & Network Initialization ---
 
 const network = new P2PNetwork(
-  async (blob: Blob, peerId: string, isPinned?: boolean, name?: string, _ttl?: number, originalSenderId?: string) => {
+  async (blob: Blob, peerId: string, _isPinned?: boolean, name?: string, _ttl?: number, originalSenderId?: string) => {
     // Sovereign Safety: Incoming images are untrusted (unpinned) by default.
-    // Phase 31: Pass originalSenderId for attribution
-    addImageToGallery(blob, false, peerId, isPinned, name, originalSenderId);
+    // Ignored sender's isPinned status to prevent "Ghost Pinning" on receiver.
+    addImageToGallery(blob, false, peerId, false, name, originalSenderId);
   },
   (type, session, _data) => {
     // Generic Event Handler (Sync Logic)
