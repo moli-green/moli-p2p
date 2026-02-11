@@ -1,56 +1,39 @@
-# Instructions for Antigravity
+# Security Hardening & Stability Instructions
 
-## Task: Server Security Hardening & Cleanup
+## Overview
+These instructions address critical security vulnerabilities and stability issues identified during the audit of `server/src/main.rs`. Please implement these changes to ensure robust operation.
 
-Please implement the following changes in `server/src/main.rs` and `server/Dockerfile` to address security vulnerabilities and stability issues.
+## 1. JSON Payload Validation (Critical Security)
+**Issue:** The server currently parses any valid JSON but only injects the `senderId` if the root is an Object. This allows malicious actors to send JSON Arrays or Primitives (e.g., `["hack", {"senderId": "fake"}]`) which bypass the identity enforcement mechanism. Although the current client might ignore these, it leaves a gap for exploitation or confusion.
 
-### 1. Room Cleanup Mechanism (Memory Leak Prevention)
-The current implementation allows rooms to persist indefinitely even after all users have left.
-*   **Action**: In `handle_socket` (at the end of the function, after `tx.send(leave_msg)`):
-    *   Acquire a write lock on `state.rooms`.
-    *   Check if the current room's `count` is 0.
-    *   If `count` is 0, remove the room from the `rooms` vector.
-    *   **Hint**: Use `retain` or find index and `remove`. Be careful not to remove a room that just got a new user (check `count` inside the lock).
+**Action:**
+*   Modify `handle_socket` in `server/src/main.rs`.
+*   After parsing `serde_json::Value`, explicitly check if it is an Object using `.is_object()`.
+*   If it is **NOT** an object, `continue` the loop immediately (drop the message). Do not broadcast it.
 
-### 2. IP Connection Limiting (DoS Protection)
-Single IP addresses can currently exhaust the server's global connection limit.
-*   **Action**:
-    *   Add a new field `ip_counts: Arc<RwLock<std::collections::HashMap<std::net::IpAddr, usize>>>` to `AppState`.
-    *   Initialize this map in `main`.
-    *   In `ws_handler`:
-        *   Extract the client's IP address (use `axum::extract::ConnectInfo<SocketAddr>`).
-        *   Check the current connection count for this IP in `state.ip_counts`.
-        *   If the count exceeds `10`, return `(StatusCode::TOO_MANY_REQUESTS, "Rate Limit Exceeded").into_response()`.
-        *   If allowed, increment the count for this IP.
-    *   **Crucial**: Ensure the IP count is decremented when the WebSocket connection closes.
-        *   **Implementation Suggestion**: Create a helper struct (e.g., `ConnectionGuard`) that holds the IP and the `state.ip_counts` reference. Implement `Drop` for this struct to automatically decrement the count.
-        *   Pass this guard (or move it) into `handle_socket` so it lives as long as the connection.
+## 2. Rate Limiting Adjustment (Stability)
+**Issue:** The current rate limit of `10` messages per second is too aggressive for WebRTC. When a peer connects, it generates many ICE candidates in a short burst. The current logic disconnects legitimate users during this handshake phase.
 
-### 3. Strict Message Size Limit (Resource Exhaustion)
-Currently, `socket.recv()` might buffer large messages before our manual check.
-*   **Action**:
-    *   In `ws_handler`, configure the `WebSocketUpgrade` instance to enforce limits *before* upgrading.
-    *   Use `.max_frame_size(16 * 1024)` and `.max_message_size(16 * 1024)`.
-    *   This ensures the underlying websocket implementation rejects oversized payloads early.
+**Action:**
+*   In `server/src/main.rs`, refine the rate limit logic in `handle_socket`:
+    *   **Soft Limit (10 msg/s):** If the rate exceeds 10 but is under 50, **drop** the message and log a warning, but **do not disconnect**. This handles benign bursts.
+    *   **Hard Limit (50 msg/s):** If the rate exceeds 50, **disconnect** the client immediately (break loop). This protects against DoS.
 
-### 4. Docker Security (Privilege Escalation)
-The container runs as root.
-*   **Action**: Modify `server/Dockerfile`.
-    *   Create a non-root user (e.g., `moli`).
-    *   Switch to this user with `USER moli` before the `CMD`.
-    *   Ensure the binary is executable by this user (standard `COPY` usually preserves permissions or sets root:root 755, which is fine for execution).
+## 3. Origin Validation (Optional / Best Practice)
+**Issue:** The WebSocket endpoint accepts connections from any origin. This allows malicious sites to connect to the user's local server instance if they know the port.
 
-## Implementation Details
+**Action:**
+*   In `ws_handler`, check for the `Origin` header.
+*   If the `ALLOWED_ORIGIN` environment variable is set (e.g., `https://moli-green.is`), verify that the request's Origin matches it.
+*   If it does not match, return `403 Forbidden`.
+*   If the variable is not set, allow all (default behavior for development).
 
-*   **Imports**: You may need to import `std::collections::HashMap`, `std::net::IpAddr`, `axum::extract::ConnectInfo`, and `axum::http::StatusCode`.
-*   **Logging**: Add `println!` or `tracing::info!` logs when:
-    *   A room is removed.
-    *   An IP is rate-limited.
-*   **Safety**: Ensure locks are held for the shortest possible time to avoid contention.
+## 4. HTTPS / Nginx Configuration
+**Issue:** WebRTC requires a secure context (HTTPS) to function across networks. The current deployment scripts might not enforce this strictly for the WebSocket upgrade path.
 
-## Verification
-After implementing, verify:
-1.  Connect multiple clients.
-2.  Disconnect all clients from a room -> Room should disappear from memory (log it).
-3.  Connect >10 clients from the same IP -> 11th should be rejected.
-4.  Send >16KB message -> Connection should close immediately or error.
+**Action:**
+*   Ensure that the Nginx configuration (`client/nginx.conf` or the generated config in `setup_vps_initial.sh`) correctly handles SSL termination and forwards the `X-Forwarded-Proto` header.
+*   (No code change needed in Rust for this if Nginx handles SSL, but ensure the documentation or deployment script reflects the need for `certbot` or SSL certificates).
+
+## Summary
+Prioritize **Task 1** (JSON Validation) and **Task 2** (Rate Limiting Fix) as they are critical for security and reliability.
