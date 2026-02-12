@@ -488,37 +488,50 @@ export class PeerSession {
         };
         this.dc?.send(JSON.stringify(meta));
 
+        if (this.dc) {
+            this.dc.bufferedAmountLowThreshold = 65536; // 64KB
+        }
+
         const buffer = await blob.arrayBuffer();
-        // const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
         let offset = 0;
 
-        return new Promise<void>((resolve, reject) => {
-            const sendChunk = () => {
-                try {
-                    while (offset < totalSize) {
-                        if (this.dc?.bufferedAmount && this.dc.bufferedAmount > 64 * 1024) {
-                            setTimeout(sendChunk, 50);
-                            return;
-                        }
+        // Optimized Loop
+        while (offset < totalSize) {
+            if (!this.dc || this.dc.readyState !== 'open') {
+                throw new Error('DC closed during transfer');
+            }
 
-                        if (!this.dc || this.dc.readyState !== 'open') {
-                            reject(new Error('DC closed during transfer'));
-                            return;
-                        }
+            if (this.dc.bufferedAmount > this.dc.bufferedAmountLowThreshold) {
+                // Wait for buffer to drain
+                await new Promise<void>((resolve, reject) => {
+                    const dc = this.dc!;
+                    const onLow = () => { cleanup(); resolve(); };
+                    const onClose = () => { cleanup(); reject(new Error('DC Closed')); };
+                    const onError = () => { cleanup(); reject(new Error('DC Error')); };
 
-                        const length = Math.min(CHUNK_SIZE, totalSize - offset);
-                        const chunk = new Uint8Array(buffer, offset, length);
-                        this.dc.send(chunk);
-                        offset += length;
-                    }
-                    console.log(`[${this.myId}] Send Complete to ${this.peerId}`);
-                    resolve();
-                } catch (e) {
-                    reject(e);
-                }
-            };
-            sendChunk();
-        });
+                    const cleanup = () => {
+                        dc.removeEventListener('bufferedamountlow', onLow);
+                        dc.removeEventListener('close', onClose);
+                        dc.removeEventListener('error', onError);
+                    };
+
+                    dc.addEventListener('bufferedamountlow', onLow);
+                    dc.addEventListener('close', onClose);
+                    dc.addEventListener('error', onError);
+                });
+            }
+
+            // Double check after await
+            if (!this.dc || this.dc.readyState !== 'open') {
+                throw new Error('DC closed during transfer');
+            }
+
+            const length = Math.min(CHUNK_SIZE, totalSize - offset);
+            const chunk = new Uint8Array(buffer, offset, length);
+            this.dc.send(chunk);
+            offset += length;
+        }
+        console.log(`[${this.myId}] Send Complete to ${this.peerId}`);
     }
 
     public requestSync() {
