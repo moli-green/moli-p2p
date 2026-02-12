@@ -129,8 +129,21 @@ async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
     ws: WebSocketUpgrade,
+    headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
     let ip = addr.ip();
+
+    // SECURITY: Origin Validation (Optional)
+    if let Ok(allowed_origin) = std::env::var("ALLOWED_ORIGIN") {
+        if let Some(origin) = headers.get("origin") {
+            if let Ok(origin_str) = origin.to_str() {
+                if origin_str != allowed_origin {
+                    println!("Origin mismatch: {} != {}", origin_str, allowed_origin);
+                    return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
+                }
+            }
+        }
+    }
 
     // SECURITY: Global Connection Limit (Circuit Breaker)
     if state.conn_count.load(Ordering::Relaxed) >= MAX_GLOBAL_CONNECTIONS {
@@ -213,7 +226,8 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
     // Rate Limit State
     let mut rate_limit_counter = 0;
     let mut rate_limit_start = std::time::Instant::now();
-    const RATE_LIMIT_MAX: usize = 10; // 10 messages per second
+    const RATE_LIMIT_WARN: usize = 10; // Warn above this
+    const RATE_LIMIT_MAX: usize = 50; // Disconnect above this
     const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
 
     // 2. Event Loop
@@ -228,9 +242,13 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
                             rate_limit_start = std::time::Instant::now();
                         }
                         rate_limit_counter += 1;
+
                         if rate_limit_counter > RATE_LIMIT_MAX {
-                             println!("Rate limit exceeded for {}. Disconnecting.", my_id);
+                             println!("Rate limit exceeded (HARD) for {}: {}/s. Disconnecting.", my_id, rate_limit_counter);
                              break;
+                        } else if rate_limit_counter > RATE_LIMIT_WARN {
+                             println!("Rate limit warning (SOFT) for {}: {}/s. Dropping message.", my_id, rate_limit_counter);
+                             continue;
                         }
 
                         // Size limit is enforced by Axum/Tungstenite
@@ -239,10 +257,16 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
                         }
 
                         // 2. Identity Spoofing Protection: Force senderId
+                        // 2.1 JSON Payload Validation (Must be Object)
                         let mut json_msg: serde_json::Value = match serde_json::from_str(&text) {
                             Ok(v) => v,
                             Err(_) => continue, // Drop invalid JSON
                         };
+
+                        if !json_msg.is_object() {
+                            println!("Invalid JSON Payload (Not an Object) from {}. Dropping.", my_id);
+                            continue;
+                        }
 
                         if let Some(obj) = json_msg.as_object_mut() {
                             obj.insert("senderId".to_string(), serde_json::Value::String(my_id.clone()));

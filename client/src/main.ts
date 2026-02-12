@@ -52,6 +52,7 @@ peerCountSpan.id = 'peer-count';
 peerCountSpan.className = 'peer-count';
 peerCountSpan.style.fontSize = '0.8em';
 peerCountSpan.textContent = '...';
+// Reverted: peerCountSpan.title (Tooltip removed)
 pSubtitle.appendChild(peerCountSpan);
 titleGroup.appendChild(h1);
 titleGroup.appendChild(pSubtitle);

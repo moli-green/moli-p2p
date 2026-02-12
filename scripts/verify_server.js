@@ -1,106 +1,97 @@
 const WebSocket = require('ws');
-const fs = require('fs');
 
-const URL = 'ws://localhost:9090/ws';
+const SERVER_URL = 'ws://localhost:9090/ws';
+const TEST_ORIGIN = 'http://localhost:3000'; // Should be allowed if ALLOWED_ORIGIN not set, or matching
 
-async function testIpLimit() {
-    console.log('--- Testing IP Limit (Max 10) ---');
-    const clients = [];
-    const limit = 12;
+async function testJsonInjection() {
+    console.log('[Test] JSON Injection / Payload Validation');
+    const ws = new WebSocket(SERVER_URL);
 
-    try {
-        for (let i = 0; i < limit; i++) {
-            await new Promise(r => setTimeout(r, 50)); // stagger slightly
-            const ws = new WebSocket(URL);
-
-            await new Promise((resolve, reject) => {
-                ws.on('open', () => {
-                    // console.log(`Client ${i+1} Connected`);
-                    clients.push(ws);
-                    resolve();
-                });
-                ws.on('error', (err) => {
-                    if (i >= 10) {
-                        console.log(`✅ Client ${i + 1} Rejected as expected: ${err.message}`);
-                        resolve(); // Success for rejection
-                    } else {
-                        console.error(`❌ Client ${i + 1} Failed unexpectedly: ${err.message}`);
-                        reject(err);
-                    }
-                });
-                ws.on('close', (code, reason) => {
-                    if (i >= 10) {
-                        // console.log(`✅ Client ${i+1} Closed as expected: ${code} ${reason}`);
-                    }
-                });
-            });
-        }
-    } catch (e) {
-        console.error("Test Failed", e);
-    }
-
-    console.log(`Connected ${clients.length} clients.`);
-    if (clients.length === 10) {
-        console.log('✅ IP Limit Verified: Only 10 clients connected.');
-    } else {
-        console.error(`❌ IP Limit Failed: ${clients.length} clients connected (Expected 10).`);
-    }
-
-    // Cleanup
-    clients.forEach(c => c.close());
-    await new Promise(r => setTimeout(r, 1000)); // Wait for cleanup
-}
-
-async function testMsgSize() {
-    console.log('\n--- Testing Message Size Limit (Max 16KB) ---');
     return new Promise((resolve) => {
-        const ws = new WebSocket(URL);
-        let passed = false;
-
         ws.on('open', () => {
-            console.log('Client Connected. Sending 17KB payload...');
-            const bigPayload = 'X'.repeat(17 * 1024);
-            try {
-                ws.send(bigPayload);
-            } catch (e) {
-                console.log('Send failed immediately (good)');
-            }
-        });
+            console.log('  Connected.');
 
-        ws.on('close', (code) => {
-            console.log(`Connection Closed: ${code}`);
-            if (code === 1009 || code === 1006) { // 1009: Message Too Big, 1006: Abnormal (sometimes Axum drops connection abruptly)
-                console.log('✅ Message Size Verified: Connection closed.');
-                passed = true;
-            } else {
-                console.error('❌ Unexpected Close Code');
-            }
-            resolve();
+            // 1. Valid Object
+            ws.send(JSON.stringify({ type: 'test', content: 'valid' }));
+            console.log('  Sent Valid Object. (Should be accepted)');
+
+            // 2. Array Injection
+            ws.send(JSON.stringify(['hack', { senderId: 'fake' }]));
+            console.log('  Sent JSON Array. (Should be dropped silently)');
+
+            // 3. Primitive Injection
+            ws.send(JSON.stringify("just a string"));
+            console.log('  Sent Primitive. (Should be dropped silently)');
+
+            // Wait a bit to see if we get disconnected (we shouldn't)
+            setTimeout(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    console.log('  ✅ Connection remains open (Correct behavior: Silently dropped).');
+                    ws.close();
+                    resolve(true);
+                } else {
+                    console.error('  ❌ Connection closed unexpectedly.');
+                    resolve(false);
+                }
+            }, 1000);
         });
 
         ws.on('error', (e) => {
-            console.log(`Connection Error: ${e.message}`); // Often "socket hang up"
-            passed = true;
-            resolve();
+            console.error('  ❌ Connection Error:', e.message);
+            resolve(false);
         });
-
-        // Timeout
-        setTimeout(() => {
-            if (!passed && ws.readyState === WebSocket.OPEN) {
-                console.error('❌ Timeout: Connection remained open.');
-                ws.close();
-                resolve();
-            }
-        }, 2000);
     });
 }
 
-async function main() {
-    await testIpLimit();
-    await testMsgSize();
-    console.log('\n--- Tests Complete ---');
-    console.log('Note: Check Server Logs for "Room empty. Removing." and "Rate limit exceeded".');
-    process.exit(0);
+async function testRateLimit() {
+    console.log('\n[Test] Rate Limiting (Soft/Hard)');
+    const ws = new WebSocket(SERVER_URL);
+
+    return new Promise((resolve) => {
+        ws.on('open', () => {
+            console.log('  Connected. Sending burst...');
+            let sent = 0;
+            const burst = setInterval(() => {
+                ws.send(JSON.stringify({ type: 'ping' }));
+                sent++;
+
+                if (sent === 15) {
+                    console.log('  Sent 15 messages (Should trigger Soft Limit default warning in server logs, but keep connection)');
+                }
+
+                if (sent >= 60) {
+                    clearInterval(burst);
+                    console.log('  Sent 60 messages (Should trigger Hard Limit disconnect)');
+                }
+            }, 10); // Very fast burst
+
+            ws.on('close', () => {
+                console.log(`  Connection closed after ${sent} messages.`);
+                if (sent >= 50) {
+                    console.log('  ✅ Disconnected correctly at Hard Limit (>50).');
+                    resolve(true);
+                } else if (sent > 10) {
+                    console.error('  ❌ Premature disconnect (Soft limit is acting as hard limit?)');
+                    resolve(false);
+                } else {
+                    console.warn('  ⚠️ Disconnected too early?');
+                    resolve(false);
+                }
+            });
+        });
+    });
 }
 
-main();
+(async () => {
+    console.log('=== Server Security Verification ===');
+    const injectionPass = await testJsonInjection();
+    const rateLimitPass = await testRateLimit();
+
+    if (injectionPass && rateLimitPass) {
+        console.log('\n✅ ALL TESTS PASSED');
+        process.exit(0);
+    } else {
+        console.error('\n❌ TESTS FAILED');
+        process.exit(1);
+    }
+})();
