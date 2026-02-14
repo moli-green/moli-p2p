@@ -1,6 +1,8 @@
 import type { SignalMessage } from './types';
 import { PeerIdentity } from './PeerIdentity';
 
+
+
 interface FileOffer {
     type: 'offer-file';
     transferId: string;
@@ -23,20 +25,6 @@ interface FileMetadata {
     identityCreatedAt?: number;
     isPinned?: boolean;
     ttl?: number; // Gossip V1
-}
-
-interface PendingUpload {
-    blob: Blob;
-    metadata: {
-        name: string;
-        size: number;
-        mime: string;
-        hash: string;
-        isPinned: boolean;
-        ttl?: number;
-        originalSenderId?: string;
-    };
-    timestamp: number;
 }
 
 export class PeerSession {
@@ -65,21 +53,17 @@ export class PeerSession {
         this.dc?.close();
         this.pc.close();
         this.stopTransferTimeout();
-        this.pendingUploads.clear();
-        this.transferQueue = [];
-        this.isTransferring = false;
     }
 
     // Receiver State
     private receivedBuffers: ArrayBuffer[] = [];
     private receivedSize = 0;
     private currentMeta: FileMetadata | null = null;
+    private sendQueue: Blob[] = [];
 
-    // Sender State (New Asynchronous Model with Sequential Queue)
-    private pendingUploads = new Map<string, PendingUpload>();
-    private transferQueue: { transferId: string, upload: PendingUpload }[] = [];
-    private isTransferring = false;
-
+    private isSending = false;
+    private currentOfferedTransferId: string | null = null;
+    private pullResolver: (() => void) | null = null;
     private transferTimeout: any = null; // Timeout Handle
 
     // ICE Buffering
@@ -325,16 +309,10 @@ export class PeerSession {
                     this.onSessionEvent?.('offer-file', this, msg);
 
                 } else if (msg.type === 'pull-request') {
-                    // --- CHANGED: Asynchronous Pull Handling with Sequential Queue ---
-                    const upload = this.pendingUploads.get(msg.transferId);
-                    if (upload) {
-                        console.log(`[${this.myId}] Received PULL REQUEST for ${msg.transferId}. Queuing transfer.`);
-                        this.pendingUploads.delete(msg.transferId); // Consume token
-
-                        this.transferQueue.push({ transferId: msg.transferId, upload });
-                        this.processTransferQueue();
-                    } else {
-                        console.warn(`[${this.myId}] Received PULL REQUEST for unknown/expired ID: ${msg.transferId}`);
+                    if (this.currentOfferedTransferId === msg.transferId && this.pullResolver) {
+                        console.log(`[${this.myId}] Received PULL REQUEST for ${msg.transferId}, starting send...`);
+                        this.pullResolver();
+                        this.pullResolver = null;
                     }
                 } else if (msg.type === 'sync-request') {
                     console.log(`[${this.myId}] Received SYNC REQUEST from ${this.peerId}`);
@@ -421,59 +399,13 @@ export class PeerSession {
     }
 
     public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl?: number, originalSenderId?: string) {
-        if (!this.dc || this.dc.readyState !== 'open') return;
-
-        const transferId = Math.random().toString(36).substring(2, 11);
-        const safeName = name || (blob as any).fileName || (blob as File).name || 'image.png';
-        const size = blob.size;
-
-        console.log(`[${this.myId}] Offering Image to ${this.peerId}: ${size} bytes (${transferId}) Pinned: ${isPinned}`);
-
-        // 1. Store State (Pending Upload)
-        this.pendingUploads.set(transferId, {
-            blob,
-            metadata: {
-                name: safeName,
-                size,
-                mime: blob.type,
-                hash,
-                isPinned,
-                ttl,
-                originalSenderId
-            },
-            timestamp: Date.now()
-        });
-
-        // 2. Send Offer Immediately (Fire and Forget)
-        const offer: FileOffer = {
-            type: 'offer-file',
-            transferId,
-            name: safeName,
-            size,
-            mime: blob.type,
-            hash,
-            isPinned,
-            ttl,
-        };
-
-        try {
-            this.dc.send(JSON.stringify(offer));
-            // Lazy Cleanup
-            this.cleanupPendingUploads();
-        } catch (e) {
-            console.warn(`[${this.myId}] Failed to send offer to ${this.peerId}`, e);
-            this.pendingUploads.delete(transferId);
-        }
-    }
-
-    private cleanupPendingUploads() {
-        const now = Date.now();
-        const TTL = 5 * 60 * 1000; // 5 Minutes
-        for (const [id, upload] of this.pendingUploads) {
-            if (now - upload.timestamp > TTL) {
-                this.pendingUploads.delete(id);
-            }
-        }
+        (blob as any).fileHash = hash;
+        (blob as any).isPinned = isPinned;
+        (blob as any).fileName = name || (blob as File).name || 'image.png';
+        (blob as any).ttl = ttl;
+        (blob as any).originalSenderId = originalSenderId; // Store for executeSend
+        this.sendQueue.push(blob);
+        this.processQueue();
     }
 
     // NEW: Request File via Hash (Pull)
@@ -484,78 +416,122 @@ export class PeerSession {
         }
     }
 
-    // --- REFACTORED: Queue Processing ---
-    private async processTransferQueue() {
-        if (this.isTransferring || this.transferQueue.length === 0) return;
-        if (!this.dc || this.dc.readyState !== 'open') return;
+    private async processQueue() {
+        if (this.isSending || this.sendQueue.length === 0) return;
 
-        this.isTransferring = true;
-        const item = this.transferQueue.shift()!;
+        if (!this.dc || this.dc.readyState !== 'open') {
+            console.warn(`[${this.myId}] processQueue: DC closed, cannot send.`);
+            return;
+        }
+
+        this.isSending = true;
+        const blob = this.sendQueue.shift()!;
 
         try {
-            await this.transferFile(item.transferId, item.upload);
+            await this.executeSend(blob);
         } catch (e) {
-            console.error(`[${this.myId}] Transfer failed`, e);
+            console.error(`[${this.myId}] Failed to send image to ${this.peerId}`, e);
         } finally {
-            this.isTransferring = false;
-            // Process next item
-            this.processTransferQueue();
+            this.isSending = false;
+            // Process next image in queue
+            this.processQueue();
         }
     }
 
-    // --- REFACTORED: Data Transfer Logic ---
-    private async transferFile(transferId: string, upload: PendingUpload) {
-        const { blob, metadata } = upload;
-        const CHUNK_SIZE = 16 * 1024;
+    private async executeSend(blob: Blob) {
+        const CHUNK_SIZE = 16 * 1024; // 16KB safe limit
+        const totalSize = blob.size;
+        const transferId = Math.random().toString(36).substring(2, 11);
+        const hash = (blob as any).fileHash || '';
+        const isPinned = (blob as any).isPinned || false;
+        const ttl = (blob as any).ttl; // Could be undefined (new broadcast) or number (relay)
+        const originalSenderId = (blob as any).originalSenderId; // Phase 31
 
-        console.log(`[${this.myId}] Starting Transfer ${transferId} to ${this.peerId}`);
+        console.log(`[${this.myId}] Offering Image to ${this.peerId}: ${totalSize} bytes (${transferId}) Pinned: ${isPinned} Orig: ${originalSenderId}`);
 
-        // 1. Send Meta
+        // 1. Send Offer
+        const offer: FileOffer = {
+            type: 'offer-file',
+            transferId,
+            name: (blob as any).fileName || (blob as File).name || 'image.png',
+            size: totalSize,
+            mime: blob.type,
+            hash,
+            isPinned,
+            ttl,
+        };
+        this.currentOfferedTransferId = transferId;
+        this.dc?.send(JSON.stringify(offer));
+
+        // 2. Wait for Pull Request (with 10-second timeout)
+        await Promise.race([
+            new Promise<void>(resolve => { this.pullResolver = resolve; }),
+            new Promise<void>((_, reject) => setTimeout(() => reject(new Error('Pull Timeout')), 10000))
+        ]).catch(err => {
+            this.pullResolver = null;
+            this.currentOfferedTransferId = null;
+            throw err;
+        });
+
+        // 3. Send Metadata (Actual start of binary)
         const meta: FileMetadata = {
             type: 'meta',
             transferId,
-            ...metadata,
+            name: offer.name,
+            size: totalSize,
+            mime: offer.mime,
+            hash,
+            originalSenderId, // Phase 31: Include Source
             identityCreatedAt: this.identity.createdAt,
+            isPinned,
+            ttl,
         };
         this.dc?.send(JSON.stringify(meta));
 
-        // 2. Send Chunks (Flow Control)
         if (this.dc) {
             this.dc.bufferedAmountLowThreshold = 65536; // 64KB
         }
 
         const buffer = await blob.arrayBuffer();
         let offset = 0;
-        const totalSize = blob.size;
 
-        try {
-            while (offset < totalSize) {
-                if (!this.dc || this.dc.readyState !== 'open') throw new Error('DC closed');
-
-                if (this.dc.bufferedAmount > this.dc.bufferedAmountLowThreshold) {
-                    await new Promise<void>(resolve => {
-                        const dc = this.dc!;
-                        const onLow = () => {
-                             dc.removeEventListener('bufferedamountlow', onLow);
-                             resolve();
-                        };
-                        dc.addEventListener('bufferedamountlow', onLow);
-                    });
-                }
-
-                // Double check after await
-                if (!this.dc || this.dc.readyState !== 'open') throw new Error('DC closed');
-
-                const length = Math.min(CHUNK_SIZE, totalSize - offset);
-                const chunk = new Uint8Array(buffer, offset, length);
-                this.dc.send(chunk);
-                offset += length;
+        // Optimized Loop
+        while (offset < totalSize) {
+            if (!this.dc || this.dc.readyState !== 'open') {
+                throw new Error('DC closed during transfer');
             }
-            console.log(`[${this.myId}] Transfer ${transferId} Complete.`);
-        } catch (e) {
-            console.error(`[${this.myId}] Transfer ${transferId} Failed:`, e);
-            throw e; // Rethrow for queue processor
+
+            if (this.dc.bufferedAmount > this.dc.bufferedAmountLowThreshold) {
+                // Wait for buffer to drain
+                await new Promise<void>((resolve, reject) => {
+                    const dc = this.dc!;
+                    const onLow = () => { cleanup(); resolve(); };
+                    const onClose = () => { cleanup(); reject(new Error('DC Closed')); };
+                    const onError = () => { cleanup(); reject(new Error('DC Error')); };
+
+                    const cleanup = () => {
+                        dc.removeEventListener('bufferedamountlow', onLow);
+                        dc.removeEventListener('close', onClose);
+                        dc.removeEventListener('error', onError);
+                    };
+
+                    dc.addEventListener('bufferedamountlow', onLow);
+                    dc.addEventListener('close', onClose);
+                    dc.addEventListener('error', onError);
+                });
+            }
+
+            // Double check after await
+            if (!this.dc || this.dc.readyState !== 'open') {
+                throw new Error('DC closed during transfer');
+            }
+
+            const length = Math.min(CHUNK_SIZE, totalSize - offset);
+            const chunk = new Uint8Array(buffer, offset, length);
+            this.dc.send(chunk);
+            offset += length;
         }
+        console.log(`[${this.myId}] Send Complete to ${this.peerId}`);
     }
 
     public requestSync() {
@@ -625,6 +601,11 @@ export class PeerSession {
         this.lastSeen = Date.now();
         // console.log(`[${this.myId}] Pong received from ${this.peerId}`);
     }
+
+
+
+    // Burn Signal removed (Sakoku Policy)
+    // public sendBurnSignal(...) {}
 
     private startTransferTimeout() {
         this.stopTransferTimeout();
