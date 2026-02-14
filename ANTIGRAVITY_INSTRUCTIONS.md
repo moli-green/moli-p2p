@@ -1,54 +1,108 @@
-# Performance Optimization: Efficient DataChannel Backpressure
+# Instructions for Antigravity (Developer)
 
-## Overview
-[DONE] These instructions address critical security vulnerabilities and stability issues identified during the audit of `server/src/main.rs`.
-**Status:** Implemented in v1.7.17 (Phase 41).
+**Objective**: Fix the image propagation instability caused by synchronous "Offer-Wait" timeouts. Decouple the "Offer" phase from the "Data Transfer" phase to allow receivers to queue downloads without sender timeouts.
 
-## New Request: Performance Optimization (Efficient DataChannel Backpressure)
-The current file transfer implementation in `client/src/PeerSession.ts` uses an inefficient polling mechanism to handle backpressure. It checks `dc.bufferedAmount` in a `while` loop and uses `setTimeout(sendChunk, 50)` when the buffer is full. This introduces unnecessary latency and jitter.
+**CRITICAL REQUIREMENT**: While offers can be sent asynchronously, data transfer on a single WebRTC DataChannel MUST be strictly sequential to prevent data corruption. Do NOT interleave file transfers.
 
-Please implement an event-driven backpressure mechanism using the `bufferedamountlow` event.
+## Task: Refactor `PeerSession.ts` to Asynchronous Offer-Pull
 
-## Action Items
+You need to modify `client/src/PeerSession.ts` to implement a "Fire-and-Forget" offer mechanism with a "Pull-Triggered" data transfer queue.
 
-### 1. Optimize `executeSend` in `client/src/PeerSession.ts`
-*   **Location:** `client/src/PeerSession.ts` around line 500.
-*   **Changes:**
-    *   Capture `this.dc` into a local variable (e.g., `const dc = this.dc`).
-    *   Set `dc.bufferedAmountLowThreshold` to `64 * 1024` (64KB).
-    *   Replace the `setTimeout(sendChunk, 50)` logic with the `onbufferedamountlow` event handler.
-    *   Implement a `cleanup` function within the `Promise` to remove event listeners once the transfer is finished or fails.
-    *   Add event listeners for `close` and `error` on the DataChannel during the transfer to reject the promise if the connection is lost.
+### Step 1: Add State Management
+Add properties to `PeerSession` class to manage pending offers and the transfer queue.
 
-### 2. Implementation Details (Logic)
 ```typescript
-const sendChunk = () => {
-    try {
-        while (offset < totalSize) {
-            if (dc.bufferedAmount > dc.bufferedAmountLowThreshold) {
-                // Wait for onbufferedamountlow to fire
-                return;
-            }
-            if (dc.readyState !== 'open') {
-                onAbort();
-                return;
-            }
-            const length = Math.min(CHUNK_SIZE, totalSize - offset);
-            const chunk = new Uint8Array(buffer, offset, length);
-            dc.send(chunk);
-            offset += length;
-        }
-        // Success cleanup and resolve
-    } catch (e) {
-        // Error cleanup and reject
-    }
-};
+// Interface for tracking offered files
+interface PendingUpload {
+    blob: Blob;
+    metadata: {
+        name: string;
+        size: number;
+        mime: string;
+        hash: string;
+        isPinned: boolean;
+        ttl?: number;
+        originalSenderId?: string;
+    };
+    timestamp: number;
+}
+
+// In PeerSession class:
+private pendingUploads = new Map<string, PendingUpload>(); // Map<TransferID, Upload>
+private transferQueue: { transferId: string, upload: PendingUpload }[] = []; // FIFO Queue for Data
+private isTransferring = false; // Lock for sequential transfer
 ```
 
-## Verification
-*   Ensure that `onbufferedamountlow` is cleared after the transfer to prevent memory leaks.
-*   Verify that the `close` and `error` listeners are also removed.
-*   Run `npm run build` in the `client` directory to ensure no TypeScript errors.
+### Step 2: Refactor `sendImage` (The "Offer" Phase)
+Modify `sendImage` to be non-blocking:
+1.  Generate a `transferId`.
+2.  Store the upload in `this.pendingUploads` with a timestamp.
+3.  Send the `offer-file` message immediately.
+4.  **REMOVE** the old `sendQueue` logic for offers. Offers are now instant.
 
-## Rationale
-Using the `bufferedamountlow` event allows the browser to notify the application as soon as the buffer has space, eliminating the 50ms wait time and significantly improving throughput on high-speed connections.
+```typescript
+public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl?: number, originalSenderId?: string) {
+    if (!this.dc || this.dc.readyState !== 'open') return;
+
+    const transferId = Math.random().toString(36).substring(2, 11);
+    // ... construct metadata ...
+
+    // 1. Store State
+    this.pendingUploads.set(transferId, { blob, metadata: { ... }, timestamp: Date.now() });
+
+    // 2. Send Offer Immediately
+    this.dc.send(JSON.stringify({ type: 'offer-file', transferId, ... }));
+
+    // Lazy Cleanup
+    this.cleanupPendingUploads();
+}
+```
+
+### Step 3: Implement `processTransferQueue` (Sequential Sender)
+Create a method to process the `transferQueue` one item at a time. This prevents interleaving chunks from multiple files on the single DataChannel.
+
+```typescript
+private async processTransferQueue() {
+    if (this.isTransferring || this.transferQueue.length === 0) return;
+    if (!this.dc || this.dc.readyState !== 'open') return;
+
+    this.isTransferring = true;
+    const item = this.transferQueue.shift()!;
+
+    try {
+        await this.transferFile(item.transferId, item.upload);
+    } catch (e) {
+        console.error(`[${this.myId}] Transfer failed`, e);
+    } finally {
+        this.isTransferring = false;
+        // Process next item
+        this.processTransferQueue();
+    }
+}
+```
+
+### Step 4: Implement `transferFile` (Data Logic)
+Refactor the data sending logic from `executeSend` into `transferFile`.
+*   Send `meta`.
+*   Loop chunks with `bufferedAmount` flow control.
+*   **Safety Check**: Ensure the loop respects `close` events or errors to avoid infinite hangs if the connection drops.
+
+### Step 5: Update `handleDataMessage` (The "Pull" Trigger)
+Modify the `pull-request` handler in `handleDataMessage`:
+1.  Retrieve the `transferId` from `pendingUploads`.
+2.  If found:
+    *   Remove from `pendingUploads`.
+    *   **PUSH** to `this.transferQueue`.
+    *   Call `this.processTransferQueue()`.
+3.  Do NOT call `transferFile` directly here (to avoid concurrency bugs).
+
+### Step 6: Cleanup Mechanism
+Implement `cleanupPendingUploads` to remove stale entries (> 5 mins) from `pendingUploads`. Call this lazily in `sendImage`. Also ensure `close()` clears all queues and maps.
+
+## Checklist for Verification
+1.  **Sequential Data**: Verify that `transferFile` is only called via `processTransferQueue` and never concurrently.
+2.  **Async Offers**: Verify `sendImage` returns immediately.
+3.  **Flow Control**: Verify `transferFile` uses `bufferedamountlow` correctly.
+4.  **No Leaks**: Verify `pendingUploads` are cleaned up on success (pull) or timeout (lazy GC).
+
+Proceed with implementation.
