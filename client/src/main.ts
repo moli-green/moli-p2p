@@ -988,16 +988,7 @@ window.moliAPI = {
     }));
   },
   getPublicKey: () => {
-    // We don't expose private key, only public (if available in identity)
-    // The PeerIdentity class in PeerSession.ts manages this.
-    // We can access it via network.identity if exposed, or we might need to cast.
-    // However, P2PNetwork structure might not expose identity directly. 
-    // Let's return null if not easily accessible to avoid breakage, or fix P2PNetwork.
-    // Actually, P2PNetwork has private identity. 
-    // But we can get it from myIdSpan tooltip? No, that's ugly.
-    // For now, let's return null or a placeholder if we can't easily get it without refactoring PeerIdentity access.
-    // Wait, PeerSession has access. P2PNetwork has `private identity`.
-    return null;
+    return network.getPublicKey();
   },
   getImageContent: async (hash: string) => {
     const item = imageStore.find(i => i.hash === hash);
