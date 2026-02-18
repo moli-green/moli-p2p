@@ -4,6 +4,7 @@ import { PeerSession } from './PeerSession';
 import { PeerIdentity } from './PeerIdentity';
 import { v4 as uuidv4 } from 'uuid';
 import { MAX_PEERS, GOSSIP_TTL, CACHE_SIZE } from './constants';
+import { blobHashRegistry } from './blobRegistry';
 
 export class P2PNetwork {
     public myId: string = ''; // This is PeerID
@@ -71,7 +72,7 @@ export class P2PNetwork {
     // Wrapper to handle Relay + UI Callback
     private onImageReceived = (blob: Blob, pId: string, pinned?: boolean, name?: string, ttl?: number, originalSenderId?: string) => {
         // Gossip V1: Relay Logic
-        const hash = (blob as any).fileHash as string | undefined;
+        const hash = blobHashRegistry.get(blob);
         if (hash && this.seenMessages.has(hash)) {
             console.log(`[Gossip] Duplicate image ignored: ${hash.substring(0, 8)}`);
             return;
@@ -259,7 +260,7 @@ export class P2PNetwork {
                 console.log('[P2P] WS Closed');
                 // Auto-reject if trying to connect
                 if (!this.myId) {
-                    // If we haven't got ID yet, it's a failure.
+                    reject(new Error("Connection Closed Early (No Identity)"));
                 }
             };
 

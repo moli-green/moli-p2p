@@ -226,9 +226,6 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
     // Rate Limit State
     let mut rate_limit_counter = 0;
     let mut rate_limit_start = std::time::Instant::now();
-    const RATE_LIMIT_WARN: usize = 10; // Warn above this
-    const RATE_LIMIT_MAX: usize = 50; // Disconnect above this
-    const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
 
     // 2. Event Loop
     loop {
@@ -236,50 +233,16 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
             Some(msg) = socket.recv() => {
                 match msg {
                     Ok(Message::Text(text)) => {
-                         // 0. DoS Protection: Rate Limit
-                        if rate_limit_start.elapsed() >= RATE_LIMIT_WINDOW {
-                            rate_limit_counter = 0;
-                            rate_limit_start = std::time::Instant::now();
-                        }
-                        rate_limit_counter += 1;
-
-                        if rate_limit_counter > RATE_LIMIT_MAX {
-                             println!("Rate limit exceeded (HARD) for {}: {}/s. Disconnecting.", my_id, rate_limit_counter);
-                             break;
-                        } else if rate_limit_counter > RATE_LIMIT_WARN {
-                             println!("Rate limit warning (SOFT) for {}: {}/s. Dropping message.", my_id, rate_limit_counter);
-                             continue;
+                        match check_rate_limit(&mut rate_limit_counter, &mut rate_limit_start, &my_id) {
+                            RateLimitAction::Disconnect => break,
+                            RateLimitAction::Drop => continue,
+                            RateLimitAction::Proceed => {}
                         }
 
-                        // Size limit is enforced by Axum/Tungstenite
-                        if text.len() > MAX_MSG_SIZE {
-                            continue;
+                        if let Some(broadcast_msg) = process_client_text(text, &my_id) {
+                            // Broadcast ONLY to this room
+                            let _ = tx.send(Arc::new(broadcast_msg));
                         }
-
-                        // 2. Identity Spoofing Protection: Force senderId
-                        // 2.1 JSON Payload Validation (Must be Object)
-                        let mut json_msg: serde_json::Value = match serde_json::from_str(&text) {
-                            Ok(v) => v,
-                            Err(_) => continue, // Drop invalid JSON
-                        };
-
-                        if !json_msg.is_object() {
-                            println!("Invalid JSON Payload (Not an Object) from {}. Dropping.", my_id);
-                            continue;
-                        }
-
-                        if let Some(obj) = json_msg.as_object_mut() {
-                            obj.insert("senderId".to_string(), serde_json::Value::String(my_id.clone()));
-                        }
-
-                        let safe_payload = json_msg.to_string();
-
-                        let msg = Arc::new(BroadcastMsg {
-                            sender_id: my_id.clone(),
-                            payload: safe_payload,
-                        });
-                        // Broadcast ONLY to this room
-                        let _ = tx.send(msg);
                     }
                     Ok(Message::Close(_)) => break,
                     Err(_) => break, // WebSocket Error
@@ -287,7 +250,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
                 }
             }
             Ok(msg) = rx.recv() => {
-                if msg.sender_id != my_id {
+                if should_forward(&msg, &my_id) {
                     if socket.send(Message::Text(msg.payload.clone())).await.is_err() {
                         break;
                     }
@@ -297,6 +260,64 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
     }
 
     cleanup(&state, &count_ref, &my_id, &room_id, &tx).await;
+}
+
+enum RateLimitAction {
+    Proceed,
+    Drop,
+    Disconnect,
+}
+
+fn check_rate_limit(counter: &mut usize, start: &mut std::time::Instant, my_id: &str) -> RateLimitAction {
+    const RATE_LIMIT_WARN: usize = 10;
+    const RATE_LIMIT_MAX: usize = 50;
+    const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
+
+    if start.elapsed() >= RATE_LIMIT_WINDOW {
+        *counter = 0;
+        *start = std::time::Instant::now();
+    }
+    *counter += 1;
+
+    if *counter > RATE_LIMIT_MAX {
+        println!("Rate limit exceeded (HARD) for {}: {}/s. Disconnecting.", my_id, counter);
+        return RateLimitAction::Disconnect;
+    } else if *counter > RATE_LIMIT_WARN {
+        println!("Rate limit warning (SOFT) for {}: {}/s. Dropping message.", my_id, counter);
+        return RateLimitAction::Drop;
+    }
+
+    RateLimitAction::Proceed
+}
+
+fn process_client_text(text: String, my_id: &str) -> Option<BroadcastMsg> {
+    if text.len() > MAX_MSG_SIZE {
+        return None;
+    }
+
+    // JSON Payload Validation
+    let mut json_msg: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    if !json_msg.is_object() {
+        println!("Invalid JSON Payload (Not an Object) from {}. Dropping.", my_id);
+        return None;
+    }
+
+    if let Some(obj) = json_msg.as_object_mut() {
+        obj.insert("senderId".to_string(), serde_json::Value::String(my_id.to_string()));
+    }
+
+    Some(BroadcastMsg {
+        sender_id: my_id.to_string(),
+        payload: json_msg.to_string(),
+    })
+}
+
+fn should_forward(msg: &BroadcastMsg, my_id: &str) -> bool {
+    msg.sender_id != my_id
 }
 
 async fn cleanup(

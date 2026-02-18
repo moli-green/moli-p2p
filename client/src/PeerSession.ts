@@ -1,5 +1,6 @@
 import type { SignalMessage } from './types';
 import { PeerIdentity } from './PeerIdentity';
+import { blobHashRegistry } from './blobRegistry';
 
 
 
@@ -387,7 +388,7 @@ export class PeerSession {
 
                 console.log(`[${this.myId}] Integrity Verified. Hash matches.`);
                 // CRITICAL FOR RELAY: Attach hash to blob so P2PNetwork can read it for Gossip
-                (blob as any).fileHash = this.currentMeta.hash;
+                blobHashRegistry.set(blob, this.currentMeta.hash);
 
                 // Phase 31: Pass Original Sender
                 const originalSender = this.currentMeta.originalSenderId || this.peerId;
@@ -501,12 +502,11 @@ export class PeerSession {
             this.dc.bufferedAmountLowThreshold = 65536; // 64KB
         }
 
-        const buffer = await upload.blob.arrayBuffer();
         const totalSize = upload.blob.size;
         const CHUNK_SIZE = 16 * 1024; // 16KB
         let offset = 0;
 
-        // Optimized Loop
+        // Optimized Loop (Memory Efficient: Chunked Read)
         while (offset < totalSize) {
             if (!this.dc || this.dc.readyState !== 'open') {
                 throw new Error('DC closed during transfer');
@@ -537,11 +537,13 @@ export class PeerSession {
                 throw new Error('DC closed during transfer');
             }
 
-            const length = Math.min(CHUNK_SIZE, totalSize - offset);
-            const chunk = new Uint8Array(buffer, offset, length);
-            this.dc.send(chunk);
-            offset += length;
-            console.log(`[${this.myId}] Send Complete to ${this.peerId}`);
+            // Read Chunk from Blob (Memory Optimization)
+            const chunkBlob = upload.blob.slice(offset, offset + CHUNK_SIZE);
+            const chunkBuffer = await chunkBlob.arrayBuffer();
+
+            this.dc.send(chunkBuffer);
+            offset += chunkBuffer.byteLength;
+            console.log(`[${this.myId}] Send Chunk (${offset}/${totalSize})`);
         }
     }
 
