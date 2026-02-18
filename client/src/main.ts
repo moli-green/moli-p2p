@@ -1213,11 +1213,35 @@ function showHelpModal() {
     while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
   };
 
+  // Section 4: Disclaimer (Deployment Requirements)
+  const sectionDisclaimer = document.createElement('div');
+  sectionDisclaimer.className = 'help-section';
+  sectionDisclaimer.style.borderLeft = '3px solid #ffcc00';
+  sectionDisclaimer.style.paddingLeft = '10px';
+  sectionDisclaimer.style.marginTop = '15px';
+  sectionDisclaimer.style.background = 'rgba(255, 204, 0, 0.05)';
+
+  const h3Disc = document.createElement('h3');
+  h3Disc.textContent = '⚠️ Network Responsibility';
+  h3Disc.style.color = '#ffcc00';
+
+  const pServer = document.createElement('p');
+  pServer.innerHTML = `<strong>Your Device Is a Server</strong><br>By joining the mesh, your device actively distributes encrypted content to other peers.`;
+
+  const pBandwidth = document.createElement('p');
+  pBandwidth.style.marginTop = '10px';
+  pBandwidth.innerHTML = `<strong>Resource Contribution</strong><br>You are contributing your <strong>Bandwidth</strong> and <strong>CPU</strong> to keep the network alive. Moli P2P has no central storage.`;
+
+  sectionDisclaimer.appendChild(h3Disc);
+  sectionDisclaimer.appendChild(pServer);
+  sectionDisclaimer.appendChild(pBandwidth);
+
   helpModal.appendChild(h2);
   helpModal.appendChild(pIntro);
   helpModal.appendChild(sectionPhilo);
   helpModal.appendChild(sectionActions);
   helpModal.appendChild(sectionSafe);
+  helpModal.appendChild(sectionDisclaimer);
   helpModal.appendChild(closeBtn);
 
   lightbox.appendChild(helpModal);
