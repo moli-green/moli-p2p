@@ -1,108 +1,81 @@
 # Instructions for Antigravity (Developer)
 
-**Objective**: Fix the image propagation instability caused by synchronous "Offer-Wait" timeouts. Decouple the "Offer" phase from the "Data Transfer" phase to allow receivers to queue downloads without sender timeouts.
+As the Auditor (Jules), I have identified several areas for improvement in the codebase. Please implement the following changes to enhance type safety, memory efficiency, stability, and code maintainability.
 
-**CRITICAL REQUIREMENT**: While offers can be sent asynchronously, data transfer on a single WebRTC DataChannel MUST be strictly sequential to prevent data corruption. Do NOT interleave file transfers.
+## 1. Refactor: Client Type Safety (Remove `any`)
 
-## Task: Refactor `PeerSession.ts` to Asynchronous Offer-Pull
+**Context:**
+Currently, the codebase attaches a `fileHash` property directly to `Blob` objects using `(blob as any).fileHash`. This is not type-safe and relies on runtime patching of built-in objects.
 
-You need to modify `client/src/PeerSession.ts` to implement a "Fire-and-Forget" offer mechanism with a "Pull-Triggered" data transfer queue.
+**Target Files:**
+- `client/src/P2PNetwork.ts`
+- `client/src/PeerSession.ts`
 
-### Step 1: Add State Management
-Add properties to `PeerSession` class to manage pending offers and the transfer queue.
+**Action:**
+1.  Create a module-level `WeakMap` to associate `Blob` objects with their hash strings.
+    ```typescript
+    // In a shared utility file or within P2PNetwork/PeerSession scope
+    export const blobHashRegistry = new WeakMap<Blob, string>();
+    ```
+2.  Replace all instances of `(blob as any).fileHash = ...` with `blobHashRegistry.set(blob, ...)`
+3.  Replace all instances of `(blob as any).fileHash` read access with `blobHashRegistry.get(blob)`.
 
-```typescript
-// Interface for tracking offered files
-interface PendingUpload {
-    blob: Blob;
-    metadata: {
-        name: string;
-        size: number;
-        mime: string;
-        hash: string;
-        isPinned: boolean;
-        ttl?: number;
-        originalSenderId?: string;
-    };
-    timestamp: number;
-}
+## 2. Optimize: Client Memory Usage (Chunked Reading)
 
-// In PeerSession class:
-private pendingUploads = new Map<string, PendingUpload>(); // Map<TransferID, Upload>
-private transferQueue: { transferId: string, upload: PendingUpload }[] = []; // FIFO Queue for Data
-private isTransferring = false; // Lock for sequential transfer
-```
+**Context:**
+In `PeerSession.ts`, the `transferFile` method reads the entire `Blob` into an `ArrayBuffer` at once using `await upload.blob.arrayBuffer()`. For large files (up to 15MB), this creates a significant memory spike.
 
-### Step 2: Refactor `sendImage` (The "Offer" Phase)
-Modify `sendImage` to be non-blocking:
-1.  Generate a `transferId`.
-2.  Store the upload in `this.pendingUploads` with a timestamp.
-3.  Send the `offer-file` message immediately.
-4.  **REMOVE** the old `sendQueue` logic for offers. Offers are now instant.
+**Target File:**
+- `client/src/PeerSession.ts`
 
-```typescript
-public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl?: number, originalSenderId?: string) {
-    if (!this.dc || this.dc.readyState !== 'open') return;
-
-    const transferId = Math.random().toString(36).substring(2, 11);
-    // ... construct metadata ...
-
-    // 1. Store State
-    this.pendingUploads.set(transferId, { blob, metadata: { ... }, timestamp: Date.now() });
-
-    // 2. Send Offer Immediately
-    this.dc.send(JSON.stringify({ type: 'offer-file', transferId, ... }));
-
-    // Lazy Cleanup
-    this.cleanupPendingUploads();
-}
-```
-
-### Step 3: Implement `processTransferQueue` (Sequential Sender)
-Create a method to process the `transferQueue` one item at a time. This prevents interleaving chunks from multiple files on the single DataChannel.
-
-```typescript
-private async processTransferQueue() {
-    if (this.isTransferring || this.transferQueue.length === 0) return;
-    if (!this.dc || this.dc.readyState !== 'open') return;
-
-    this.isTransferring = true;
-    const item = this.transferQueue.shift()!;
-
-    try {
-        await this.transferFile(item.transferId, item.upload);
-    } catch (e) {
-        console.error(`[${this.myId}] Transfer failed`, e);
-    } finally {
-        this.isTransferring = false;
-        // Process next item
-        this.processTransferQueue();
+**Action:**
+1.  Modify `transferFile` to read chunks incrementally using `blob.slice()`.
+    ```typescript
+    // Pseudo-code concept
+    while (offset < totalSize) {
+        const chunkBlob = upload.blob.slice(offset, offset + CHUNK_SIZE);
+        const chunkBuffer = await chunkBlob.arrayBuffer();
+        // ... send chunkBuffer ...
+        offset += CHUNK_SIZE;
     }
-}
-```
+    ```
+    *Note: Ensure `await` is used correctly inside the loop to prevent blocking the UI thread or flooding the DataChannel.*
 
-### Step 4: Implement `transferFile` (Data Logic)
-Refactor the data sending logic from `executeSend` into `transferFile`.
-*   Send `meta`.
-*   Loop chunks with `bufferedAmount` flow control.
-*   **Safety Check**: Ensure the loop respects `close` events or errors to avoid infinite hangs if the connection drops.
+## 3. Fix: Client Connection Stability (Promise Hang)
 
-### Step 5: Update `handleDataMessage` (The "Pull" Trigger)
-Modify the `pull-request` handler in `handleDataMessage`:
-1.  Retrieve the `transferId` from `pendingUploads`.
-2.  If found:
-    *   Remove from `pendingUploads`.
-    *   **PUSH** to `this.transferQueue`.
-    *   Call `this.processTransferQueue()`.
-3.  Do NOT call `transferFile` directly here (to avoid concurrency bugs).
+**Context:**
+In `P2PNetwork.ts`, the `connect()` method returns a Promise that resolves upon receiving an `identity` message. However, if the WebSocket connection closes *before* the identity message is received (e.g., server rejects connection immediately), the promise remains pending until the 5-second timeout triggers.
 
-### Step 6: Cleanup Mechanism
-Implement `cleanupPendingUploads` to remove stale entries (> 5 mins) from `pendingUploads`. Call this lazily in `sendImage`. Also ensure `close()` clears all queues and maps.
+**Target File:**
+- `client/src/P2PNetwork.ts`
 
-## Checklist for Verification
-1.  **Sequential Data**: Verify that `transferFile` is only called via `processTransferQueue` and never concurrently.
-2.  **Async Offers**: Verify `sendImage` returns immediately.
-3.  **Flow Control**: Verify `transferFile` uses `bufferedamountlow` correctly.
-4.  **No Leaks**: Verify `pendingUploads` are cleaned up on success (pull) or timeout (lazy GC).
+**Action:**
+1.  Update the `ws.onclose` handler within `connect()` to strictly reject the promise if `this.myId` has not been set yet.
+    ```typescript
+    this.ws.onclose = () => {
+        if (!this.myId) {
+            reject(new Error("Connection Closed Early"));
+        }
+    };
+    ```
 
-Proceed with implementation.
+## 4. Refactor: Server Code Cleanliness (Function Extraction)
+
+**Context:**
+The `handle_socket` function in `server/src/main.rs` is becoming monolithic. It handles the handshake, rate limiting logic, and the main select loop all in one place.
+
+**Target File:**
+- `server/src/main.rs`
+
+**Action:**
+1.  Extract the inner logic of the WebSocket message handling loop into a separate function, e.g., `process_client_message`.
+2.  Extract the broadcast message handling logic into a separate function, e.g., `process_broadcast_message`.
+3.  Ensure `handle_socket` remains high-level, coordinating the event loop.
+
+---
+
+**Verification:**
+After implementing these changes, verify that:
+1.  The client builds without TypeScript errors (`npm run build`).
+2.  File transfers still work correctly (test with a small image).
+3.  The server compiles and runs without warnings (`cargo check`).
