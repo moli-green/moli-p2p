@@ -66,7 +66,7 @@ EventLoop:
             end with;
         or
             \* 4. Termination Check (Allow stuttering only if done)
-            await Done;
+            await Done;/Users/sk/work/moli-p2p/tla/AsyncOfferPull.cfg
         end either;
     end while;
 end process;
