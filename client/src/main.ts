@@ -385,6 +385,17 @@ function updateDecayUI() {
 
 
 
+function updateEmptyState() {
+  const emptyState = document.getElementById('empty-state');
+  if (emptyState) {
+    if (imageStore.length === 0) {
+      emptyState.style.display = 'flex';
+    } else {
+      emptyState.style.display = 'none';
+    }
+  }
+}
+
 function checkEviction() {
   if (imageStore.length <= MAX_GALLERY_ITEMS) return;
   const unpinned = imageStore.filter(i => !i.isPinned).sort((a, b) => a.timestamp - b.timestamp);
@@ -398,6 +409,7 @@ function checkEviction() {
       if (imageStore.length > MAX_GALLERY_ITEMS) checkEviction();
     }
   }
+  updateEmptyState();
 }
 
 function removeImageFromGallery(hash: string) {
@@ -412,6 +424,7 @@ function removeImageFromGallery(hash: string) {
       imageStore.splice(index, 1);
     }
   });
+  updateEmptyState();
 }
 
 // 5. Network Logic
@@ -671,6 +684,7 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
     updateBufferUI();
     checkEviction();
     shareInventory();
+    updateEmptyState();
 
   } catch (e) {
     console.error('[AddImage] Error:', e);
@@ -956,14 +970,18 @@ if (idBurnBtn) {
 
     await Promise.race([initPromise, timeoutPromise]);
 
+    // Initial Load
     await initBlacklist();
     await initVaultAndLoad();
+
+    updateEmptyState();
 
     myIdSpan.textContent = network.myId;
     myIdSpan.title = `My Identity: ${network.myId} `;
     myIdSpan.style.color = getPeerColor(network.myId);
     myIdIcon.innerHTML = jdenticon.toSvg(network.myId, 20);
     showToast(`Sovereign Soul Ready: ${network.myId.substring(0, 8)} `, 'success');
+
   } catch (err: any) {
     console.error("FATAL INITIALIZATION ERROR:", err);
     showToast(`Startup Failed: ${err.message || err}. Try Burning Identity.`, 'error');
