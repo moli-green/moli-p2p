@@ -34,7 +34,7 @@ struct Room {
 
 #[derive(Clone)]
 struct AppState {
-    rooms: Arc<TokioRwLock<Vec<Room>>>,
+    rooms: Arc<TokioRwLock<HashMap<String, Room>>>,
     conn_count: Arc<AtomicUsize>,
     ip_counts: Arc<StdRwLock<HashMap<IpAddr, usize>>>,
 }
@@ -82,7 +82,7 @@ async fn main() {
     }
 
     let app_state = AppState {
-        rooms: Arc::new(TokioRwLock::new(Vec::new())),
+        rooms: Arc::new(TokioRwLock::new(HashMap::new())),
         conn_count: Arc::new(AtomicUsize::new(0)),
         ip_counts: Arc::new(StdRwLock::new(HashMap::new())),
     };
@@ -185,17 +185,17 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
         let mut rooms = state.rooms.write().await;
         
         // Find available room
-        let mut target_room_index = None;
-        for (i, room) in rooms.iter().enumerate() {
+        let mut target_room_id = None;
+        for room in rooms.values() {
             if room.count.load(Ordering::Relaxed) < ROOM_CAPACITY {
-                target_room_index = Some(i);
+                target_room_id = Some(room.id.clone());
                 break;
             }
         }
 
-        if let Some(index) = target_room_index {
+        if let Some(id) = target_room_id {
             // Join existing
-            let room = &rooms[index];
+            let room = rooms.get(&id).unwrap();
             room.count.fetch_add(1, Ordering::Relaxed);
             // println!("User {} joined Room {} (Count: {})", my_id, room.id, room.count.load(Ordering::Relaxed));
             (room.tx.clone(), room.count.clone(), room.id.clone())
@@ -204,7 +204,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
             let (tx, _rx) = broadcast::channel::<Arc<BroadcastMsg>>(100);
             let count = Arc::new(AtomicUsize::new(1));
             let new_id = Uuid::new_v4().to_string();
-            rooms.push(Room {
+            rooms.insert(new_id.clone(), Room {
                 id: new_id.clone(),
                 tx: tx.clone(),
                 count: count.clone(),
@@ -337,13 +337,13 @@ async fn cleanup(
     // 2. Decrement Room Count
     let _ = count_ref.fetch_sub(1, Ordering::Relaxed);
 
-    // 3. CLEANUP: Remove Room if Empty
+    // 3. CLEANUP: Remove Room if Empty (O(1) HashMap Removal)
     {
         let mut rooms = state.rooms.write().await;
-        if let Some(idx) = rooms.iter().position(|r| r.id == *room_id) {
-             if rooms[idx].count.load(Ordering::Relaxed) == 0 {
+        if let std::collections::hash_map::Entry::Occupied(entry) = rooms.entry(room_id.to_string()) {
+             if entry.get().count.load(Ordering::Relaxed) == 0 {
                  println!("Room {} is empty. Removing.", room_id);
-                 rooms.remove(idx);
+                 entry.remove();
              }
         }
     }
