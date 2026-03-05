@@ -38,3 +38,4 @@
 
 *   **`ANTIGRAVITY_INSTRUCTIONS.md` is Transient**: This file serves as a communication channel for the *current* task only. The contents of this file should be treated as "consumed" once applied. Jules should overwrite this file completely when issuing new instructions (do not append).
 *   **Language**: All agent-to-agent documentation (`AGENTS.md`, `ANTIGRAVITY_INSTRUCTIONS.md`) should be written in **English** to ensure clarity and precision for LLM processing.
+*   **Testing Image Uploads (Browser Subagents)**: When using browser subagents to test upload functionality, **DO NOT generate small dummy images via Canvas injection**. Small images fail to test the WebRTC DataChannel chunking and backpressure logic. Instead, always use the real test images provided in the repository (e.g., fetching from the local server like `http://localhost:5173/jules.jpg` or `client/public/` directory) to ensure realistic payload sizes are tested.
