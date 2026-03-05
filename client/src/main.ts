@@ -327,13 +327,19 @@ async function checkImageHealth(blob: Blob): Promise<{ ok: boolean; reason?: str
   });
 }
 
+const peerColorCache = new Map<string, string>();
 function getPeerColor(peerId: string): string {
+  if (peerColorCache.has(peerId)) {
+    return peerColorCache.get(peerId)!;
+  }
   let hash = 0;
   for (let i = 0; i < peerId.length; i++) {
     hash = peerId.charCodeAt(i) + ((hash << 5) - hash);
   }
   const h = Math.abs(hash % 360);
-  return `hsl(${h}, 70 %, 60 %)`;
+  const color = `hsl(${h}, 70 %, 60 %)`;
+  peerColorCache.set(peerId, color);
+  return color;
 }
 
 // --- 4. Logic & Handlers ---
