@@ -184,32 +184,26 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _guard: Connectio
     let (tx, count_ref, room_id) = {
         let mut rooms = state.rooms.write().await;
         
-        // Find available room
-        let mut target_room_id = None;
-        for room in rooms.values() {
-            if room.count.load(Ordering::Relaxed) < ROOM_CAPACITY {
-                target_room_id = Some(room.id.clone());
-                break;
-            }
-        }
-
-        if let Some(id) = target_room_id {
+        // Find available room - O(1) mostly by checking any room that has space
+        // Since we don't care which room, we just find the first available or create one.
+        // Instead of full iteration, we can just use `iter_mut().find` which stops early,
+        // and avoid double-lookup and unnecessary string clones.
+        if let Some((_, room)) = rooms.iter_mut().find(|(_, r)| r.count.load(Ordering::Relaxed) < ROOM_CAPACITY) {
             // Join existing
-            let room = rooms.get(&id).unwrap();
             room.count.fetch_add(1, Ordering::Relaxed);
-            // println!("User {} joined Room {} (Count: {})", my_id, room.id, room.count.load(Ordering::Relaxed));
             (room.tx.clone(), room.count.clone(), room.id.clone())
         } else {
             // Create new
             let (tx, _rx) = broadcast::channel::<Arc<BroadcastMsg>>(100);
             let count = Arc::new(AtomicUsize::new(1));
             let new_id = Uuid::new_v4().to_string();
-            rooms.insert(new_id.clone(), Room {
+
+            let room = Room {
                 id: new_id.clone(),
                 tx: tx.clone(),
                 count: count.clone(),
-            });
-            // println!("User {} created Room {} (Count: 1)", my_id, new_id);
+            };
+            rooms.insert(new_id.clone(), room);
             (tx, count, new_id)
         }
     };
