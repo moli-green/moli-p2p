@@ -250,6 +250,8 @@ function processTicker() {
       const nextItem = renderQueue.shift()!;
 
       // FIX: Check if item is still in imageStore before appending. (Ghost Image Fix)
+      // Optimization: use a Set if it gets too large, but for 50 items `some` is fine.
+      // Alternatively we can check if it exists in the array directly.
       const exists = imageStore.some(i => i.id === nextItem.id);
       if (!exists) {
         console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
@@ -258,8 +260,12 @@ function processTicker() {
         return;
       }
 
-      gallery.appendChild(nextItem.element);
-      console.log(`[Ticker] Appended item ${nextItem.hash} to DOM.`);
+      // Check if item is already in DOM to avoid redundant reflows
+      if (!gallery.contains(nextItem.element)) {
+        gallery.appendChild(nextItem.element);
+        console.log(`[Ticker] Appended item ${nextItem.hash} to DOM.`);
+      }
+
       updateDecayUI();
       updateBufferUI();
     }
@@ -413,17 +419,16 @@ function checkEviction() {
 }
 
 function removeImageFromGallery(hash: string) {
-  const items = imageStore.filter(i => i.hash === hash);
-  items.forEach(item => {
-    const index = imageStore.findIndex(i => i.id === item.id);
-    if (index > -1) {
+  for (let i = imageStore.length - 1; i >= 0; i--) {
+    if (imageStore[i].hash === hash) {
+      const item = imageStore[i];
       if (gallery.contains(item.element)) {
         gallery.removeChild(item.element);
       }
       URL.revokeObjectURL(item.url);
-      imageStore.splice(index, 1);
+      imageStore.splice(i, 1);
     }
-  });
+  }
   updateEmptyState();
 }
 
@@ -699,8 +704,10 @@ async function initVaultAndLoad(): Promise<void> {
 
   if (pinnedItems.length > 0) {
     console.log(`[Vault] Restoring ${pinnedItems.length} pinned souls...`);
+    const existingHashes = new Set(imageStore.map(i => i.hash));
+
     for (const item of pinnedItems) {
-      if (!imageStore.some(i => i.hash === item.hash)) {
+      if (!existingHashes.has(item.hash)) {
         // Fix: Determine isLocal based on originalSenderId vs myId
         // If originalSenderId is missing, assume it's legacy local or we don't know (treat as local to be safe/consistent with old behavior)
         // If originalSenderId exists and != myId, it is NOT local.
