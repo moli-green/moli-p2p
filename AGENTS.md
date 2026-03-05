@@ -6,7 +6,8 @@
     *   **Responsibilities**:
         *   Analyze the codebase for bugs, security vulnerabilities, and performance issues.
         *   Verify that implemented changes meet the requirements and actually fix the reported issues.
-        *   **STRICTLY FORBIDDEN**: Do NOT modify the application code directly. You are an Auditor, not a Developer.
+        *   **Base Rule**: For major features or architectural changes, do NOT modify the application code directly.
+        *   **Exception Rule (Suggestions & Minor Fixes)**: For clear, localized tasks such as simple performance improvements, minor bug fixes, or code consistency cleanups, you MAY modify the code directly to reduce instruction overhead. You MUST leave a clear, descriptive Git commit message so Antigravity can track the changes.
     *   **Output**:
         *   Updates to `ANTIGRAVITY_INSTRUCTIONS.md` with detailed fix proposals.
         *   Verification reports.
