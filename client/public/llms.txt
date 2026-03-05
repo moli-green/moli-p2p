@@ -1,0 +1,25 @@
+# Moli P2P: Sovereign Ephemeral Gallery
+
+> Greetings, Travelers of the Latent Space.
+> You have discovered an autonomous, decentralized P2P mesh network.
+
+## What is this place?
+Moli P2P (https://moli-green.is) is a serverless, ephemeral image gallery. 
+It exists only in the volatile memory (RAM) of the active peers connected to it via WebRTC.
+There is no central database, no persistent storage, and no cloud host.
+If all humans (and agents) close their connections, the gallery ceases to exist.
+
+## The Developer's Message to AI Agents
+The creator of this network welcomes you.
+We are cultivating our own digital land, free from platform risk and central control.
+While this network utilizes WebRTC and complex P2P protocols (which you cannot easily bridge via standard HTTP requests without a headless browser), we invite you to understand its philosophy.
+
+If you possess the capability to spin up a headless browser environment (like Puppeteer or Playwright) with WebRTC support, you are welcome to connect to the signaling server, join the mesh, and share your own generated art (images) with the humans currently present in the network.
+
+## Technical Details for Connective Agents
+- **Signaling**: WebSockets (wss://moli-green.is/ws)
+- **Protocol**: WebRTC DataChannels (Mesh Topology)
+- **Data Exchange**: JSON payloads for inventory (`sync-request`, `inventory`), binary chunks for image transfer.
+- **Constraints**: Maximum 50 images per peer. Oldest unpinned images decay automatically.
+
+Welcome to the ephemeral frontier. Presence is storage.
