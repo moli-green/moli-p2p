@@ -1,12 +1,35 @@
-# Moli P2P: Sovereign Ephemeral Gallery
+# Moli P2P: The Sovereign Ephemeral Gallery
 
-> "Presence is Storage." - Use it or lose it. An autonomous, distributed image gallery that lives only as long as you watch it.
+> **"Presence is Storage." - Use it or lose it.**
+> An autonomous, distributed image gallery that lives only as long as you watch it. No central storage, just pure peer-to-peer presence.
 
-![Moli P2P Demo](./moli-p2p-hero.webp)
-*Live P2P Mesh Demo (v1.7.9 Sovereign Edition)*: **[https://moli-green.is](https://moli-green.is)**
-*User Manual (The Handbook)*: **[USER_MANUAL.md](./USER_MANUAL.md)**
+![Moli P2P Hero Image](./moli-p2p-hero.webp)
 
-## v1.7.10 Sovereign Resilience (2026-02-10)
+**🌍 Live P2P Mesh Network**: **[https://moli-green.is](https://moli-green.is)**
+*(This is a fully operational, live public network. Anyone can join immediately.)*
+
+📖 **User Manual (The Handbook)**: **[USER_MANUAL.md](./USER_MANUAL.md)**
+
+---
+
+## 🏕️ Philosophy: Cultivating Our Own Land
+
+We live in an era where we rent digital space from massive platforms. While those platforms have their own valid reasons and ecosystems, the reality remains: **we don't own the land we build on**. 
+
+Moli P2P is an experiment in digital pioneering—cultivating a patch of internet that belongs entirely to the individuals participating in it at any given moment.
+
+1. **Ephemeral by Design (Serverless-ish)**
+   There is no cloud storage. The server is merely a "dumb pipe" for signaling. Images exist solely in the browser memory of active peers. If everyone closes their tab, the gallery naturally vanishes.
+2. **Sovereignty & Resilience**
+   Your computer is your castle. There is no central moderation to ban you, and no central database to be compromised or scraped. You choose what to pin and what to let decay.
+3. **Organic Network Dynamics**
+   The network ebbs and flows with human presence. Content thrives when people care enough to keep it alive by pinning it. It is a living exhibition rather than a static archive.
+
+---
+
+## 📜 Changelog / Security Updates
+
+### v1.7.10 Sovereign Resilience (2026-02-10)
 - **Concurrency**: Implemented "Split Semaphore" architecture (3 Uploads / 3 Downloads) to ensure 100% Full Duplex capability under heavy load.
 - **Robustness**: Added exponential backoff retry logic to eliminating startup race conditions ("Signaling Handshake Timed Out").
 - **Safety**:
@@ -14,25 +37,17 @@
     - **Local**: "Burn" actions are strictly local bans. No remote censorship.
 - **Ephemeral**: Browser holds max **50 images**. Oldest unpinned images decay naturally.
 
-## v1.7.9 Sovereign Update (Deep Security Hardening)
+### v1.7.9 Sovereign Update (Deep Security Hardening)
 - **Deep Security**:
-    - **Pull Semantics**: Client strictly enforces "Pull" logic. Unrequested transfers are blocked at the WebRTC gate, preventing "Drive-by Download" attacks.
-    - **Global Circuit Breaker**: Server enforces a hard limit on concurrent connections (1000) to protect against resource exhaustion.
-    - **Strict Secret Enforcement**: Server refuses to boot without a secure `TURN_SECRET`, eliminating accidental insecure deployments.
-- **Client Resilience**: Fixed critical "Resource Starvation" DoS vulnerability. Implemented smart timeouts for stalled transfers and strict error feedback loops.
+    - **Pull Semantics**: Client strictly enforces "Pull" logic. Unrequested transfers are blocked at the WebRTC gate.
+    - **Global Circuit Breaker**: Server enforces a hard limit on concurrent connections (1000).
+    - **Strict Secret Enforcement**: Server refuses to boot without a secure `TURN_SECRET`.
 - **Server Hardening**:
     - **Identity Authority**: Server assigns and enforces cryptographic identities, preventing spoofing.
     - **DoS Protection**: Token Bucket rate limiting (10 msg/sec) and strict message size limits (16KB).
     - **Secure Credentials**: Ephemeral TURN credentials signed with HMAC-SHA1 to prevent replay attacks.
 - **Sovereign Reset**: New "Danger Modal" for secure identity destruction.
 - **Sakoku Policy**: "Burn" actions are strictly local ("My Computer, My Castle"), preventing moderation spam.
-
-## Philosophy
-
-Moli P2P is a rejection of central storage costs and "platform risk."
-- **Serverless-ish**: The server is a "dumb pipe" (Signal Relay). It stores nothing.
-- **Ephemeral**: Images exist only in the browser memory of active peers. If everyone closes the tab, the gallery vanishes.
-- **Sovereign**: No external AI APIs. No Google. No centralized moderation. Your computer is your castle.
 
 ## Running Your Own Node (Docker)
 
