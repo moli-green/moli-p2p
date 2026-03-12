@@ -372,7 +372,8 @@ export class P2PNetwork {
         // Logic: Pass originalSenderId. If undefined (origin), use myId in peerSession.sendImage?
         // Actually PeerSession.sendImage will handle it if we pass it. 
         // We should pass myId as originalSenderId if it's new.
-        const effectiveSender = originalSenderId || this.myId;
+        // Fix: Use arguments.length to detect if originalSenderId was explicitly passed (possibly as undefined for legacy)
+        const effectiveSender = (arguments.length > 6) ? originalSenderId : this.myId;
 
         this.sessions.forEach(session => {
             if (session.isConnected && session.sessionPeerId !== excludePeerId) {
