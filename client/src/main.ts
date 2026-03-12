@@ -817,9 +817,12 @@ const network = new P2PNetwork(
     releaseDownloadSlot();
   },
   (peerId: string, hashes: string[]) => { // Inventory Callback
+    // Pre-calculate existing hashes to make the lookup O(1) instead of O(N) inside the loop
+    const existingHashes = new Set(imageStore.map(i => i.hash));
+
     hashes.forEach(hash => {
       // Pull Logic: Request missing items automatically
-      const weHaveIt = imageStore.some(i => i.hash === hash);
+      const weHaveIt = existingHashes.has(hash);
       if (!weHaveIt && !network.isBlacklisted(hash)) {
         const session = network.sessions.get(peerId);
         if (session) {
