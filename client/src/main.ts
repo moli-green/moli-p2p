@@ -644,7 +644,7 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
         }
 
         // Optimistic Broadcast on Pin
-        network.broadcastImage(blob, item.hash, item.isPinned, item.caption);
+        network.broadcastImage(blob, item.hash, item.isPinned, item.caption, GOSSIP_TTL, undefined, item.originalSenderId);
       }
     };
 
@@ -767,13 +767,14 @@ async function performLocalUpload(file: Blob, _name: string = 'image.png'): Prom
     size: file.size,
     mime: file.type,
     timestamp: Date.now(),
+    originalSenderId: network.myId,
   }).then(() => {
     console.log(`[Vault] Auto-pinned original upload: ${hash.slice(0, 8)} `);
-    addImageToGallery(file, true, undefined, true, _name); // isPinned = true
+    addImageToGallery(file, true, undefined, true, _name, network.myId); // isPinned = true
   });
 
   shareInventory();
-  const sentCount = network.broadcastImage(file, hash, false, _name);
+  const sentCount = network.broadcastImage(file, hash, false, _name, GOSSIP_TTL, undefined, network.myId);
 
   if (sentCount > 0) {
     showToast(`Broadcasted to ${sentCount} peers!`, "success");
@@ -790,7 +791,8 @@ const network = new P2PNetwork(
   async (blob: Blob, peerId: string, _isPinned?: boolean, name?: string, _ttl?: number, originalSenderId?: string) => {
     // Sovereign Safety: Incoming images are untrusted (unpinned) by default.
     // Ignored sender's isPinned status to prevent "Ghost Pinning" on receiver.
-    addImageToGallery(blob, false, peerId, false, name, originalSenderId);
+    const isLocal = !originalSenderId || originalSenderId === network.myId;
+    addImageToGallery(blob, isLocal, peerId, false, name, originalSenderId);
   },
   (type, session, _data) => {
     // Generic Event Handler (Sync Logic)

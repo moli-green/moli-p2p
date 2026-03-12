@@ -391,7 +391,7 @@ export class PeerSession {
                 blobHashRegistry.set(blob, this.currentMeta.hash);
 
                 // Phase 31: Pass Original Sender
-                const originalSender = this.currentMeta.originalSenderId || this.peerId;
+                const originalSender = this.currentMeta.originalSenderId;
 
                 this.onImage(blob, this.peerId, this.currentMeta.isPinned, this.currentMeta.name, this.currentMeta.ttl, originalSender);
 
