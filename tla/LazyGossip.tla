@@ -43,7 +43,7 @@ define
 end define;
 
 \* Process: Nodes handling messages
-process Node \in Nodes
+fair process Node \in Nodes
 begin
 RunLoop:
     while ~Done do
@@ -79,7 +79,7 @@ RunLoop:
 end process;
 
 \* Process: Inject Initial Gossip
-process Genesis = "Genesis"
+fair process Genesis = "Genesis"
 begin
 Seed:
     \* Inject a message to ONE Node (n1)
@@ -90,7 +90,7 @@ Seed:
 end process;
 
 end algorithm; *)
-\* BEGIN TRANSLATION (chksum(pcal) = "fe82633d" /\ chksum(tla) = "6f4b5df3")
+\* BEGIN TRANSLATION (chksum(pcal) = "fecf097" /\ chksum(tla) = "11d703c7")
 VARIABLES messages, seen, pc
 
 (* define statement *)
@@ -167,8 +167,9 @@ Next == Genesis
            \/ (\E self \in Nodes: Node(self))
            \/ Terminating
 
-Spec == Init /\ [][Next]_vars
-        /\ WF_vars(Next)
+Spec == /\ Init /\ [][Next]_vars
+        /\ \A self \in Nodes : WF_vars(Node(self))
+        /\ WF_vars(Genesis)
 
 Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 

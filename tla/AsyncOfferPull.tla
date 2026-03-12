@@ -35,7 +35,7 @@ define
 end define;
 
 \* Sender Process: Single-threaded Event Loop
-process Sender \in Senders
+fair process Sender \in Senders
 begin
 EventLoop:
     while TRUE do
@@ -66,13 +66,13 @@ EventLoop:
             end with;
         or
             \* 4. Termination Check (Allow stuttering only if done)
-            await Done;/Users/sk/work/moli-p2p/tla/AsyncOfferPull.cfg
+            await Done;
         end either;
     end while;
 end process;
 
 \* Receiver Process
-process ReceiverProc = Receiver
+fair process ReceiverProc = Receiver
 begin
 ReceiveLoop:
     while TRUE do
@@ -96,7 +96,7 @@ ReceiveLoop:
 end process;
 
 end algorithm; *)
-\* BEGIN TRANSLATION (chksum(pcal) = "4dc95288" /\ chksum(tla) = "42a68664")
+\* BEGIN TRANSLATION (chksum(pcal) = "8708496a" /\ chksum(tla) = "ed6be5db")
 VARIABLES network, pendingUploads, transferQueue, senderFiles, receivedFiles
 
 (* define statement *)
@@ -166,7 +166,9 @@ ReceiverProc == /\ \/ /\ \E msg \in {m \in network: m.to = Receiver}:
 Next == ReceiverProc
            \/ (\E self \in Senders: Sender(self))
 
-Spec == Init /\ [][Next]_vars
+Spec == /\ Init /\ [][Next]_vars
+        /\ \A self \in Senders : WF_vars(Sender(self))
+        /\ WF_vars(ReceiverProc)
 
 \* END TRANSLATION 
 =============================================================================
