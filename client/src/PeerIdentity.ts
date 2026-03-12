@@ -1,3 +1,5 @@
+import { bufferToHex } from './utils';
+
 const DB_NAME = 'moli_id_db';
 const STORE_NAME = 'keys';
 const KEY_ID = 'identity';
@@ -51,8 +53,7 @@ export class PeerIdentity {
 
     private async derivePeerId(spki: ArrayBuffer): Promise<string> {
         const hashBuffer = await window.crypto.subtle.digest('SHA-256', spki);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const hashHex = bufferToHex(hashBuffer);
         return hashHex.substring(0, 16); // 16 char fingerprint
     }
 

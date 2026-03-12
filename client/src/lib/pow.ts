@@ -1,3 +1,5 @@
+import { bufferToHex } from '../utils';
+
 export async function generatePoW(peerId: string, timestamp: number, difficulty: number = 4): Promise<{ nonce: string; duration: number }> {
     const start = Date.now();
     const prefix = '0'.repeat(difficulty);
@@ -10,8 +12,7 @@ export async function generatePoW(peerId: string, timestamp: number, difficulty:
         const nonceStr = nonce.toString();
         const data = encoder.encode(peerId + timestamp + nonceStr);
         const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const hashHex = bufferToHex(hashBuffer);
 
         if (hashHex.startsWith(prefix)) {
             const duration = Date.now() - start;

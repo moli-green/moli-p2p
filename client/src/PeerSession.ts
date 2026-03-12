@@ -1,6 +1,7 @@
 import type { SignalMessage } from './types';
 import { PeerIdentity } from './PeerIdentity';
 import { blobHashRegistry } from './blobRegistry';
+import { bufferToHex } from './utils';
 
 
 
@@ -376,8 +377,7 @@ export class PeerSession {
                 const blob = new Blob(this.receivedBuffers, { type: this.currentMeta.mime });
                 const buffer = await blob.arrayBuffer();
                 const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
-                const hashArray = Array.from(new Uint8Array(hashBuffer));
-                const computedHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                const computedHash = bufferToHex(hashBuffer);
 
                 if (computedHash !== this.currentMeta.hash) {
                     console.error(`[${this.myId}] SECURITY ALERT: Hash Mismatch! Declared: ${this.currentMeta.hash}, Computed: ${computedHash}. Discarding data.`);

@@ -10,6 +10,7 @@ import {
   NETWORK_TIMEOUT_MS,
   GOSSIP_TTL
 } from './constants';
+import { bufferToHex } from './utils';
 
 declare global {
   interface Window {
@@ -285,17 +286,10 @@ console.error = (...args) => {
   logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#f00');
 };
 
-const HEX_STRINGS = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
-
 async function hashBlob(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-  const uint8Array = new Uint8Array(hashBuffer);
-  let hash = '';
-  for (let i = 0; i < uint8Array.length; i++) {
-    hash += HEX_STRINGS[uint8Array[i]];
-  }
-  return hash;
+  return bufferToHex(hashBuffer);
 }
 
 async function checkImageHealth(blob: Blob): Promise<{ ok: boolean; reason?: string }> {
