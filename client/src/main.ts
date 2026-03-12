@@ -201,6 +201,7 @@ interface ImageItem {
 }
 
 const imageStore: ImageItem[] = [];
+const imageStoreMap = new Map<string, ImageItem>();
 const renderQueue: ImageItem[] = [];
 
 let isPaused = false;
@@ -423,6 +424,7 @@ function checkEviction() {
     if (index > -1) {
       if (gallery.contains(toRemove.element)) gallery.removeChild(toRemove.element);
       URL.revokeObjectURL(toRemove.url);
+      imageStoreMap.delete(toRemove.hash);
       imageStore.splice(index, 1);
       if (imageStore.length > MAX_GALLERY_ITEMS) checkEviction();
     }
@@ -431,6 +433,7 @@ function checkEviction() {
 }
 
 function removeImageFromGallery(hash: string) {
+  imageStoreMap.delete(hash);
   for (let i = imageStore.length - 1; i >= 0; i--) {
     if (imageStore[i].hash === hash) {
       const item = imageStore[i];
@@ -526,7 +529,7 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
     }
 
     // Deduplication
-    const existing = imageStore.find(i => i.hash === hash);
+    const existing = imageStoreMap.get(hash);
     if (existing) {
       if (name && !existing.caption) existing.caption = name;
       if (isPinned && !existing.isPinned) {
@@ -695,6 +698,7 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
 
     // Store Item
     const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, caption: name, originalSenderId };
+    imageStoreMap.set(hash, newItem);
     imageStore.push(newItem);
 
     renderQueue.push(newItem);
@@ -839,7 +843,7 @@ const network = new P2PNetwork(
     processDownloadQueue();
   },
   (session: PeerSession, hash: string) => { // Request Handler (Provider Side)
-    const item = imageStore.find(i => i.hash === hash);
+    const item = imageStoreMap.get(hash);
     if (item) {
       console.log(`[Main] Peer ${session.sessionPeerId} requested ${hash.substring(0, 8)}. Sending...`);
       fetch(item.url)
@@ -1033,7 +1037,7 @@ window.moliAPI = {
     return network.getPublicKey();
   },
   getImageContent: async (hash: string) => {
-    const item = imageStore.find(i => i.hash === hash);
+    const item = imageStoreMap.get(hash);
     if (!item) return null;
     // Return base64 or blob url? The interface implied content.
     // Let's return the Blob URL for now, or read it to base64 if needed.
