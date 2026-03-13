@@ -73,11 +73,11 @@ export class P2PNetwork {
     private onImageReceived = (blob: Blob, pId: string, pinned?: boolean, name?: string, ttl?: number, originalSenderId?: string) => {
         // Gossip V1: Relay Logic
         const hash = blobHashRegistry.get(blob);
+        let isDuplicate = false;
         if (hash && this.seenMessages.has(hash)) {
             console.log(`[Gossip] Duplicate image ignored: ${hash.substring(0, 8)}`);
-            return;
-        }
-        if (hash) {
+            isDuplicate = true;
+        } else if (hash) {
             this.seenMessages.add(hash);
             if (this.seenMessages.size > CACHE_SIZE) {
                 const iter = this.seenMessages.values();
@@ -87,7 +87,10 @@ export class P2PNetwork {
         }
 
         // Trigger UI (Simplified)
+        // Must call onImage even for duplicates so main.ts can call releaseDownloadSlot()
         this.onImage(blob, pId, pinned, name, ttl, originalSenderId);
+
+        if (isDuplicate) return;
 
         // Relay
         const currentTtl = typeof ttl === 'number' ? ttl : 0;
