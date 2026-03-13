@@ -392,11 +392,15 @@ export class PeerSession {
 
                 // Phase 31: Pass Original Sender
                 const originalSender = this.currentMeta.originalSenderId;
+                const isPinned = this.currentMeta.isPinned;
+                const name = this.currentMeta.name;
+                const ttl = this.currentMeta.ttl;
 
-                this.onImage(blob, this.peerId, this.currentMeta.isPinned, this.currentMeta.name, this.currentMeta.ttl, originalSender);
-
-                // Reset
+                // Reset state BEFORE calling onImage to allow next transfer instantly
                 this.cleanupTransfer();
+
+                // Fire event but DONT await it here. The caller (onImage) must manage the slot release.
+                this.onImage(blob, this.peerId, isPinned, name, ttl, originalSender);
             }
         }
     }
