@@ -1,3 +1,4 @@
+import time
 import pytest
 import asyncio
 from playwright.async_api import async_playwright
@@ -22,9 +23,9 @@ async def test_p2p_file_transfer():
         page2.on("console", lambda msg: print(f"Page 2 Console: {msg.text}"))
 
         print("Navigating to page 1")
-        await page1.goto(SERVER_URL)
+        await page1.goto(f'{SERVER_URL}?_t={int(time.time())}')
         print("Navigating to page 2")
-        await page2.goto(SERVER_URL)
+        await page2.goto(f'{SERVER_URL}?_t={int(time.time())}')
 
         # Let the applications fully boot up
         await asyncio.sleep(2)
