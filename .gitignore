@@ -50,3 +50,6 @@ deploy.config
 test_images/
 テストシナリオ.txt
 /client/public/test_batch/
+__pycache__/
+.pytest_cache/
+tests/e2e/test_images/

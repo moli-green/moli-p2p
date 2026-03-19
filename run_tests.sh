@@ -46,4 +46,4 @@ echo "Cleaning up..."
 kill -9 $SERVER_PID 2>/dev/null || true
 kill -9 $CLIENT_PID 2>/dev/null || true
 
-# exit $TEST_EXIT_CODE
+exit $TEST_EXIT_CODE
