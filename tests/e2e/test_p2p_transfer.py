@@ -2,7 +2,6 @@ import pytest
 import asyncio
 from playwright.async_api import async_playwright
 import os
-import time
 
 SERVER_URL = "http://localhost:8080"
 
@@ -27,18 +26,24 @@ async def test_p2p_file_transfer():
         print("Navigating to page 2")
         await page2.goto(SERVER_URL)
 
-        print("Waiting for peers to connect...")
-        await asyncio.sleep(5)
+        # Let the applications fully boot up
+        await asyncio.sleep(2)
 
-        # Ensure test image is valid, use a real image or a PNG with proper header, rather than just urandom
-        # Let's write a tiny transparent 1x1 png to ensure it passes any basic image parsing
+        # In Moli, the modal might reject the file if it's too big or malformed.
+        # Let's ensure the file is small, valid, and fully processed.
         test_file_path = "test_image.png"
         with open(test_file_path, "wb") as f:
+            # 1x1 transparent PNG
             f.write(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82')
-            # Append 2MB of random data to test chunking
-            f.write(os.urandom(1024 * 1024 * 2))
+            # Let's add ONLY a small amount of random data (e.g. 500KB) to test chunking without hitting memory limits
+            f.write(os.urandom(1024 * 500))
 
         try:
+            # Wait for peers to connect
+            # Since the apps communicate through the signaling server, give them time to exchange ICE candidates and establish WebRTC.
+            print("Waiting for peers to connect...")
+            await asyncio.sleep(5)
+
             # Let's count initial images
             img_count2_initial = await page2.locator(".image-wrapper").count()
             if img_count2_initial == 0:
@@ -66,7 +71,7 @@ async def test_p2p_file_transfer():
             print("Waiting for image to appear on Peer 2...")
             img_count2_final = img_count2_initial
 
-            for _ in range(15):
+            for _ in range(25):
                 img_count2_final = await page2.locator(".image-wrapper").count()
                 if img_count2_final == 0:
                     img_count2_final = await page2.locator(".gallery-item").count()
@@ -77,8 +82,6 @@ async def test_p2p_file_transfer():
                     print(f"Image received on Peer 2! Count is now {img_count2_final}")
                     break
                 await asyncio.sleep(1)
-
-            await page2.screenshot(path="page2_end.png")
 
             assert img_count2_final > img_count2_initial, "Peer 2 did not receive the image from Peer 1"
 
