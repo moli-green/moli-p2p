@@ -122,8 +122,12 @@ export class P2PNetwork {
 
     public canReceiveFrom(peerId: string): boolean {
         // E2E Test Override: Disable Infant Rate Limiting for rapid automated tests
-        if (localStorage.getItem('MOLI_DISABLE_RATE_LIMIT') === 'true') {
-            return true;
+        try {
+            if (localStorage.getItem('MOLI_DISABLE_RATE_LIMIT') === 'true') {
+                return true;
+            }
+        } catch (e) {
+            // Ignore localStorage access errors in restricted/incognito modes
         }
 
         const now = Date.now();
