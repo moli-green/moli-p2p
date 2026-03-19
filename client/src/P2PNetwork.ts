@@ -121,6 +121,11 @@ export class P2PNetwork {
     }
 
     public canReceiveFrom(peerId: string): boolean {
+        // E2E Test Override: Disable Infant Rate Limiting for rapid automated tests
+        if (localStorage.getItem('MOLI_DISABLE_RATE_LIMIT') === 'true') {
+            return true;
+        }
+
         const now = Date.now();
         // Stability Tuning: Increase burst limit for Initial Sync (Gallery Size)
         const MAX_TOKENS = 100;

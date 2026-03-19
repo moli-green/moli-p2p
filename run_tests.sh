@@ -38,7 +38,7 @@ sleep 5
 echo "Running tests..."
 # Run the tests
 set +e
-pytest tests/e2e/test_basic.py tests/e2e/test_p2p_transfer.py -v
+pytest tests/e2e/test_basic.py tests/e2e/test_p2p_transfer.py tests/e2e/test_p2p_mesh.py -v -s
 TEST_EXIT_CODE=$?
 
 # Cleanup
