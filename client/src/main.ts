@@ -844,7 +844,7 @@ const network = new P2PNetwork(
         .then(r => r.blob())
         .then(blob => {
           // Send Image (Tributes removed)
-          session.sendImage(blob, item.hash, item.isPinned, item.caption, GOSSIP_TTL);
+          session.sendImage(blob, item.hash, item.isPinned, item.caption, GOSSIP_TTL, item.originalSenderId);
         })
         .catch(e => console.error(`[Main] Failed to load requested image:`, e));
     } else {

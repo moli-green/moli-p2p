@@ -1,8 +1,9 @@
 import time
 import pytest
 import asyncio
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, expect
 import os
+import re
 
 SERVER_URL = "http://localhost:8080"
 
@@ -85,6 +86,11 @@ async def test_p2p_file_transfer():
                 await asyncio.sleep(1)
 
             assert img_count2_final > img_count2_initial, "Peer 2 did not receive the image from Peer 1"
+            
+            print("Verifying Sovereign Safety (Remote Image Blur Bypass Bug Fix)...")
+            received_img = page2.locator(".gallery-item img").last
+            await expect(received_img).to_have_class(re.compile(r"blurred"))
+            print("Verification passed! Image is safely blurred.")
 
         finally:
             if os.path.exists(test_file_path):

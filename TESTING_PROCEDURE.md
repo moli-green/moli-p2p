@@ -4,6 +4,10 @@ To maintain the stability, security, and conceptual integrity of the Moli P2P ar
 
 This procedure ensures that logic errors are caught early, state explosions are prevented, and standard integration tests are reliably executed.
 
+> [!IMPORTANT]
+> **CRITICAL RULE FOR `spec.md` UPDATES**
+> The `spec.md` file contains the living history and foundational decision-making records of this project. **When updating `spec.md`, you must ONLY append new information to the document. NEVER modify, delete, or overwrite any existing historical records, philosophical decisions, or previous phases.**
+
 ---
 
 ## 1. Specification & Design Review

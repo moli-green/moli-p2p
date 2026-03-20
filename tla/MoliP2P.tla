@@ -29,9 +29,9 @@ VARIABLES
 
     (* In-flight Data (Gossip Protocol) *)
     network_messages,   \* Set of messages currently in transit between peers
-    message_count       \* Integer to hard-bound the total messages generated (prevent infinite loops)
+    churn_count         \* Bound the number of times nodes can leave
 
-vars == <<server_connected, mesh_links, peer_store, peer_status, network_messages, message_count>>
+vars == <<server_connected, mesh_links, peer_store, peer_status, network_messages, churn_count>>
 
 (***************************************************************************)
 (* Type Invariant                                                          *)
@@ -42,7 +42,7 @@ TypeOK ==
     /\ peer_store \in [ Peers -> SUBSET Images ]
     /\ peer_status \in [ Peers -> {"Offline", "Signaling", "Connected"} ]
     /\ network_messages \subseteq [ src: Peers, dst: Peers, img: Images ]
-    /\ message_count \in 0..MaxMessages
+    /\ churn_count \in 0..3
 
 (***************************************************************************)
 (* Initial State                                                           *)
@@ -53,7 +53,7 @@ Init ==
     /\ peer_store = [ p \in Peers |-> {} ]
     /\ peer_status = [ p \in Peers |-> "Offline" ]
     /\ network_messages = {}
-    /\ message_count = 0
+    /\ churn_count = 0
 
 (***************************************************************************)
 (* State Transitions (Actions)                                             *)
@@ -65,7 +65,7 @@ JoinSignaling(p) ==
     /\ Cardinality(server_connected) < MaxConnections \* Strict DoS limit check
     /\ server_connected' = server_connected \cup {p}
     /\ peer_status' = [peer_status EXCEPT ![p] = "Signaling"]
-    /\ UNCHANGED <<mesh_links, peer_store, network_messages, message_count>>
+    /\ UNCHANGED <<mesh_links, peer_store, network_messages, churn_count>>
 
 (* 2. Two signaling peers discover each other and form a WebRTC P2P link *)
 EstablishWebRTC(p1, p2) ==
@@ -77,47 +77,46 @@ EstablishWebRTC(p1, p2) ==
     /\ {p1, p2} \notin mesh_links
     /\ mesh_links' = mesh_links \cup {{p1, p2}}
     /\ peer_status' = [peer_status EXCEPT ![p1] = "Connected", ![p2] = "Connected"]
-    /\ UNCHANGED <<server_connected, peer_store, network_messages, message_count>>
+    /\ UNCHANGED <<server_connected, peer_store, network_messages, churn_count>>
 
 (* 3. A connected peer generates/uploads a local image and initiates a broadcast *)
 UploadAndBroadcast(p, img) ==
     /\ peer_status[p] = "Connected"
     /\ img \notin peer_store[p]
-    /\ message_count + Cardinality({ n \in Peers : {p, n} \in mesh_links }) <= MaxMessages
-    /\ peer_store' = [peer_store EXCEPT ![p] = @ \cup {img}]
     /\ LET new_msgs == { [src |-> p, dst |-> n, img |-> img] : n \in {x \in Peers : {p, x} \in mesh_links} } IN
+       /\ Cardinality(network_messages) + Cardinality(new_msgs) <= MaxMessages
        /\ network_messages' = network_messages \cup new_msgs
-       /\ message_count' = message_count + Cardinality(new_msgs)
-    /\ UNCHANGED <<server_connected, mesh_links, peer_status>>
+    /\ peer_store' = [peer_store EXCEPT ![p] = @ \cup {img}]
+    /\ UNCHANGED <<server_connected, mesh_links, peer_status, churn_count>>
 
 (* 4. A peer receives a relayed image, stores it (Sovereign Safety), and gossips to neighbors *)
 ReceiveAndRelay(msg) ==
     /\ msg \in network_messages
     /\ msg.img \notin peer_store[msg.dst] \* Deduplication: only process if new
     /\ peer_status[msg.dst] = "Connected"
-    /\ message_count + Cardinality({ n \in Peers : {msg.dst, n} \in mesh_links /\ n /= msg.src }) <= MaxMessages
-    /\ peer_store' = [peer_store EXCEPT ![msg.dst] = @ \cup {msg.img}]
     /\ LET relay_msgs == { [src |-> msg.dst, dst |-> n, img |-> msg.img] : n \in {x \in Peers : {msg.dst, x} \in mesh_links /\ x /= msg.src} } IN
+       /\ Cardinality(network_messages) - 1 + Cardinality(relay_msgs) <= MaxMessages
        /\ network_messages' = (network_messages \ {msg}) \cup relay_msgs
-       /\ message_count' = message_count + Cardinality(relay_msgs)
-    /\ UNCHANGED <<server_connected, mesh_links, peer_status>>
+    /\ peer_store' = [peer_store EXCEPT ![msg.dst] = @ \cup {msg.img}]
+    /\ UNCHANGED <<server_connected, mesh_links, peer_status, churn_count>>
 
 (* 5. A message is dropped because the receiver already has the image (Deduplication) *)
 DropDuplicate(msg) ==
     /\ msg \in network_messages
     /\ msg.img \in peer_store[msg.dst]
     /\ network_messages' = network_messages \ {msg}
-    /\ UNCHANGED <<server_connected, mesh_links, peer_store, peer_status, message_count>>
+    /\ UNCHANGED <<server_connected, mesh_links, peer_store, peer_status, churn_count>>
 
 (* 6. A peer gracefully leaves the network *)
 LeaveNetwork(p) ==
     /\ peer_status[p] \in {"Signaling", "Connected"}
+    /\ churn_count < 3
+    /\ churn_count' = churn_count + 1
     /\ server_connected' = server_connected \ {p}
     /\ mesh_links' = { link \in mesh_links : p \notin link }
     /\ peer_status' = [peer_status EXCEPT ![p] = "Offline"]
     /\ peer_store' = [peer_store EXCEPT ![p] = {}]
     /\ network_messages' = { m \in network_messages : m.src /= p /\ m.dst /= p }
-    /\ UNCHANGED <<message_count>>
 
 (***************************************************************************)
 (* Next State Relation                                                     *)
@@ -130,6 +129,10 @@ Next ==
     \/ \E p \in Peers : LeaveNetwork(p)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
+    /\ (\A p \in Peers : WF_vars(JoinSignaling(p)))
+    /\ (\A p1, p2 \in Peers : WF_vars(EstablishWebRTC(p1, p2)))
+    /\ (\A p \in Peers, img \in Images : WF_vars(UploadAndBroadcast(p, img)))
+    /\ (\A msg \in [src: Peers, dst: Peers, img: Images] : WF_vars(ReceiveAndRelay(msg) \/ DropDuplicate(msg)))
 
 (***************************************************************************)
 (* Safety Properties                                                       *)
@@ -144,7 +147,7 @@ Safety_ServerLimit ==
 (***************************************************************************)
 (* Hard stop for TLC to prevent state explosion if variables somehow exceed bounds *)
 MaxMessagesLimit ==
-    message_count <= MaxMessages
+    Cardinality(network_messages) <= MaxMessages
 
 (***************************************************************************)
 (* Liveness Properties                                                     *)

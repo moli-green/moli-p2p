@@ -633,3 +633,10 @@ This object bridges the internal P2P logic to the browser console or external sc
     -   **Exponential Backoff**: `P2PNetwork.init` now retries connection up to 5 times.
     -   **Logic**: 1s -> 2s -> 3s -> 4s -> 5s delay.
     -   **Effect**: Eliminates startup failures in multi-tab/low-end device scenarios.
+
+## 21. Sovereign Safety Enforcement (v1.7.11 - 2026-03-20)
+
+### A. Blur Bypass Bug Fix (Pull Strategy)
+- **Issue**: Images requested via P2P "Pull" (Anti-Entropy missing hash requests) were missing the `originalSenderId` parameter when served. This caused receiving nodes to falsely flag incoming images as "Local" (`isLocal = true`), bypassing the Sovereign Safety "Blur by Default" filter.
+- **Solution**: The Provider callback (`main.ts`) now explicitly passes `item.originalSenderId` into `session.sendImage()`.
+- **Effect**: Complete restoration of the default safety blur on all non-local images, regardless of whether they were pushed actively or pulled passively.

@@ -53,3 +53,10 @@ test_images/
 __pycache__/
 .pytest_cache/
 tests/e2e/test_images/
+
+# --- TLA+ Artifacts ---
+tla/states/
+tla/*.log
+tla/*.old
+tla/*.out
+.tlacache/
