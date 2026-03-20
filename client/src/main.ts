@@ -789,7 +789,8 @@ const network = new P2PNetwork(
   async (blob: Blob, peerId: string, _isPinned?: boolean, name?: string, _ttl?: number, originalSenderId?: string) => {
     // Sovereign Safety: Incoming images are untrusted (unpinned) by default.
     // Ignored sender's isPinned status to prevent "Ghost Pinning" on receiver.
-    const isLocal = !originalSenderId || originalSenderId === network.myId;
+    // If originalSenderId is missing (legacy remote), it MUST be treated as remote (!isLocal).
+    const isLocal = originalSenderId === network.myId;
     addImageToGallery(blob, isLocal, peerId, false, name, originalSenderId);
   },
   (type, session, _data) => {
