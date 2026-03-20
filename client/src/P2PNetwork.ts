@@ -351,11 +351,15 @@ export class P2PNetwork {
                 this.activeIceServers
             );
             this.sessions.set(senderId, session);
-            session.start();
+            session.start().then(res => {
+                if (!res.ok) console.error(`[Network] PeerSession start failed: ${res.error}`);
+            });
         }
 
         if (msg.type !== 'join') {
-            session.handleSignal(msg);
+            session.handleSignal(msg).then(res => {
+                if (!res.ok) console.error(`[Network] Signal handling failed: ${res.error}`);
+            });
         }
     }
 

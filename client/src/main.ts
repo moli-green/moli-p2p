@@ -11,6 +11,8 @@ import {
   GOSSIP_TTL
 } from './constants';
 import { bufferToHex } from './utils';
+import type { Result } from './lib/Result';
+import { ok, err } from './lib/Result';
 
 declare global {
   interface Window {
@@ -286,10 +288,14 @@ console.error = (...args) => {
   logToScreen(args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' '), '#f00');
 };
 
-async function hashBlob(blob: Blob): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-  return bufferToHex(hashBuffer);
+async function hashBlob(blob: Blob): Promise<Result<string>> {
+  try {
+    const buffer = await blob.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    return ok(bufferToHex(hashBuffer));
+  } catch (error) {
+    return err(new Error(`Failed to hash blob: ${error}`));
+  }
 }
 
 async function checkImageHealth(blob: Blob): Promise<{ ok: boolean; reason?: string }> {
@@ -510,7 +516,12 @@ function shareInventory() {
 // --- CORE: Add Image to Gallery (Simplified Phase 31) ---
 async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: string, isPinned: boolean = false, name?: string, originalSenderId?: string) {
   try {
-    const hash = await hashBlob(blob);
+    const hashResult = await hashBlob(blob);
+    if (!hashResult.ok) {
+      console.error(`[Main] Error hashing blob for gallery: ${hashResult.error}`);
+      return;
+    }
+    const hash = hashResult.value;
 
     // 0. Guard: Blacklist Check
     if (network.isBlacklisted(hash)) {
@@ -754,7 +765,13 @@ async function performLocalUpload(file: Blob, _name: string = 'image.png'): Prom
     showToast(`Rejected: ${healthCheck.reason} `, 'warn');
     return { success: false, reason: healthCheck.reason };
   }
-  const hash = await hashBlob(file);
+
+  const hashResult = await hashBlob(file);
+  if (!hashResult.ok) {
+    console.error(`[Main] Failed to hash local upload: ${hashResult.error}`);
+    return { success: false, reason: 'Failed to hash image' };
+  }
+  const hash = hashResult.value;
 
   // Auto-Pin Restored (Phase 39)
   // Since we can now remove local uploads without blocking, it's safe to pin everything.

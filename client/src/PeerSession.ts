@@ -2,6 +2,8 @@ import type { SignalMessage } from './types';
 import { PeerIdentity } from './PeerIdentity';
 import { blobHashRegistry } from './blobRegistry';
 import { bufferToHex } from './utils';
+import type { Result } from './lib/Result';
+import { wrapPromise, ok, err } from './lib/Result';
 
 
 
@@ -135,7 +137,7 @@ export class PeerSession {
 
 
     // ★ Unidirectional Logic: Only the smaller Signaling ID initiates
-    public async start() {
+    public async start(): Promise<Result<void>> {
         // Compare Session IDs (myId vs _peerId) NOT Peer IDs
         const isOfferer = this.myId < this._peerId;
         console.log(`[${this.myId}] Determining Role vs Session [${this._peerId}]: MySession < PeerSession = ${isOfferer}`);
@@ -146,80 +148,92 @@ export class PeerSession {
             const dc = this.pc.createDataChannel('moli-images');
             this.setupDataChannel(dc);
 
-            const offer = await this.pc.createOffer();
-            await this.pc.setLocalDescription(offer);
+            const offerResult = await wrapPromise(this.pc.createOffer());
+            if (!offerResult.ok) return err(new Error(`createOffer failed: ${offerResult.error}`));
+
+            const sldResult = await wrapPromise(this.pc.setLocalDescription(offerResult.value));
+            if (!sldResult.ok) return err(new Error(`setLocalDescription failed: ${sldResult.error}`));
+
             console.log(`[${this.myId}] Sending OFFER to ${this.peerId}`);
             this.sendSignal({
                 type: 'offer',
                 senderId: this.myId,
                 targetId: this._peerId, // Target SessionID
-                sdp: offer
+                sdp: offerResult.value
             });
         } else {
             console.log(`[${this.myId}] I am Answerer for ${this.peerId} (Waiting)`);
         }
+        return ok(undefined);
     }
 
-    public async handleSignal(msg: SignalMessage) {
+    public async handleSignal(msg: SignalMessage): Promise<Result<void>> {
         console.log(`[${this.myId}] Handling Signal from ${msg.senderId}: ${msg.type}`);
-        try {
-            if (msg.type === 'offer') {
-                console.log(`[${this.myId}] Received OFFER`);
-                // Technically only Answerer should receive this
-                await this.pc.setRemoteDescription(msg.sdp);
-                // Flush Candidates
-                await this.flushCandidates();
 
-                const answer = await this.pc.createAnswer();
-                await this.pc.setLocalDescription(answer);
-                console.log(`[${this.myId}] Sending ANSWER to ${msg.senderId}`);
-                this.sendSignal({
-                    type: 'answer',
-                    senderId: this.myId,
-                    targetId: this._peerId, // Target SessionID
-                    sdp: answer
+        if (msg.type === 'offer') {
+            console.log(`[${this.myId}] Received OFFER`);
+            // Technically only Answerer should receive this
+            const srdResult = await wrapPromise(this.pc.setRemoteDescription(msg.sdp));
+            if (!srdResult.ok) return err(new Error(`setRemoteDescription failed on offer: ${srdResult.error}`));
+
+            // Flush Candidates
+            const flushRes = await this.flushCandidates();
+            if (!flushRes.ok) console.warn(`Flush candidates failed: ${flushRes.error}`);
+
+            const answerResult = await wrapPromise(this.pc.createAnswer());
+            if (!answerResult.ok) return err(new Error(`createAnswer failed: ${answerResult.error}`));
+
+            const sldResult = await wrapPromise(this.pc.setLocalDescription(answerResult.value));
+            if (!sldResult.ok) return err(new Error(`setLocalDescription failed on answer: ${sldResult.error}`));
+
+            console.log(`[${this.myId}] Sending ANSWER to ${msg.senderId}`);
+            this.sendSignal({
+                type: 'answer',
+                senderId: this.myId,
+                targetId: this._peerId, // Target SessionID
+                sdp: answerResult.value
+            });
+
+        } else if (msg.type === 'answer') {
+            console.log(`[${this.myId}] Received ANSWER`);
+            const srdResult = await wrapPromise(this.pc.setRemoteDescription(msg.sdp));
+            if (!srdResult.ok) return err(new Error(`setRemoteDescription failed on answer: ${srdResult.error}`));
+            // Flush Candidates
+            const flushRes = await this.flushCandidates();
+            if (!flushRes.ok) console.warn(`Flush candidates failed: ${flushRes.error}`);
+
+        } else if (msg.type === 'candidate') {
+            console.log(`[${this.myId}] Received CANDIDATE`);
+            if (this.pc.remoteDescription) {
+                const iceResult = await wrapPromise(this.pc.addIceCandidate(msg.candidate));
+                if (!iceResult.ok) return err(new Error(`addIceCandidate failed: ${iceResult.error}`));
+            } else {
+                console.log(`[${this.myId}] Buffering CANDIDATE (RemoteDesc not set)`);
+                this.candidateQueue.push(msg.candidate);
+                // Sort queue to prioritize IPv6
+                this.candidateQueue.sort((a, b) => {
+                    const aIsV6 = a.candidate?.toLowerCase().includes('ip6') || false;
+                    const bIsV6 = b.candidate?.toLowerCase().includes('ip6') || false;
+                    return aIsV6 === bIsV6 ? 0 : (aIsV6 ? -1 : 1);
                 });
-
-            } else if (msg.type === 'answer') {
-                console.log(`[${this.myId}] Received ANSWER`);
-                await this.pc.setRemoteDescription(msg.sdp);
-                // Flush Candidates
-                await this.flushCandidates();
-
-            } else if (msg.type === 'candidate') {
-                console.log(`[${this.myId}] Received CANDIDATE`);
-                if (this.pc.remoteDescription) {
-                    await this.pc.addIceCandidate(msg.candidate);
-                } else {
-                    console.log(`[${this.myId}] Buffering CANDIDATE (RemoteDesc not set)`);
-                    this.candidateQueue.push(msg.candidate);
-                    // Sort queue to prioritize IPv6
-                    this.candidateQueue.sort((a, b) => {
-                        const aIsV6 = a.candidate?.toLowerCase().includes('ip6') || false;
-                        const bIsV6 = b.candidate?.toLowerCase().includes('ip6') || false;
-                        return aIsV6 === bIsV6 ? 0 : (aIsV6 ? -1 : 1);
-                    });
-                }
             }
-        } catch (err) {
-            console.error('Signaling Error:', err);
         }
+
+        return ok(undefined);
     }
 
-    private async flushCandidates() {
+    private async flushCandidates(): Promise<Result<void>> {
         if (this.candidateQueue.length > 0) {
             console.log(`[${this.myId}] Flushing ${this.candidateQueue.length} buffered candidates`);
             while (this.candidateQueue.length > 0) {
                 const cand = this.candidateQueue.shift();
                 if (cand) {
-                    try {
-                        await this.pc.addIceCandidate(cand);
-                    } catch (e) {
-                        console.error("Failed to add buffered candidate", e);
-                    }
+                    const iceResult = await wrapPromise(this.pc.addIceCandidate(cand));
+                    if (!iceResult.ok) return err(new Error(`Failed to add buffered candidate: ${iceResult.error}`));
                 }
             }
         }
+        return ok(undefined);
     }
 
     private setupDataChannel(dc: RTCDataChannel) {
@@ -432,8 +446,8 @@ export class PeerSession {
         }
     }
 
-    public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl?: number, originalSenderId?: string) {
-        if (!this.dc || this.dc.readyState !== 'open') return;
+    public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl?: number, originalSenderId?: string): Result<void> {
+        if (!this.dc || this.dc.readyState !== 'open') return err(new Error("DataChannel not open"));
 
         const transferId = Math.random().toString(36).substring(2, 11);
         const fileName = name || (blob as File).name || 'image.png';
@@ -471,9 +485,15 @@ export class PeerSession {
             ttl,
         };
         console.log(`[${this.myId}] Offering Image to ${this.peerId}: ${totalSize} bytes (${transferId}) Pinned: ${isPinned} Orig: ${originalSenderId}`);
-        this.dc.send(JSON.stringify(offer));
 
-        this.cleanupPendingUploads();
+        try {
+            this.dc.send(JSON.stringify(offer));
+            this.cleanupPendingUploads();
+            return ok(undefined);
+        } catch (e) {
+            this.pendingUploads.delete(transferId);
+            return err(new Error(`Failed to send offer: ${e}`));
+        }
     }
 
 
