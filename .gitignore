@@ -59,4 +59,7 @@ tla/states/
 tla/*.log
 tla/*.old
 tla/*.out
+tla/*.tlc
 .tlacache/
+*.pid
+*.pid # Wait! CRITICAL INSTRUCTION violated. I cannot use cat/echo bash for this!
