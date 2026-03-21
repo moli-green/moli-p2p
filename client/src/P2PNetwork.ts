@@ -139,28 +139,28 @@ export class P2PNetwork {
         // Stability Tuning: Increase burst limit for Initial Sync (Gallery Size)
         const MAX_TOKENS = 100;
         // Refill 1 token every 10 seconds (Sustainable 6 msg/min)
-        const REFILL_RATE = 10 * 1000;
+        const REFILL_RATE_MS = 10 * 1000;
 
         let state = this.bucketRegistry.get(peerId);
         if (!state) {
             state = { tokens: MAX_TOKENS, lastRefill: now };
         } else {
-            // Refill tokens based on time passed
+            // Refill tokens based on time passed (fractional approach for precision)
             const elapsed = now - state.lastRefill;
-            const newTokens = Math.floor(elapsed / REFILL_RATE);
+            const newTokens = elapsed / REFILL_RATE_MS;
             if (newTokens > 0) {
                 state.tokens = Math.min(MAX_TOKENS, state.tokens + newTokens);
-                state.lastRefill = state.lastRefill + (newTokens * REFILL_RATE);
+                state.lastRefill = now;
             }
         }
 
-        if (state.tokens <= 0) {
-            const nextTokenIn = Math.ceil((REFILL_RATE - (now - state.lastRefill)) / 1000);
-            console.warn(`[Guard] Rate limit hit for ${peerId}. Tokens: 0. Next in ${nextTokenIn}s`);
+        if (state.tokens < 1) {
+            const nextTokenIn = Math.ceil((1 - state.tokens) * REFILL_RATE_MS / 1000);
+            console.warn(`[Guard] Rate limit hit for ${peerId}. Tokens: <1. Next in ${nextTokenIn}s`);
             return false;
         }
 
-        state.tokens--;
+        state.tokens -= 1;
         this.bucketRegistry.set(peerId, state);
         console.log(`[Guard] Token accepted for ${peerId}. Remaining: ${state.tokens}`);
         return true;
