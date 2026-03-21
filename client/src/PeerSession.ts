@@ -80,7 +80,7 @@ export class PeerSession {
         private _peerId: string, // SessionID
         private identity: PeerIdentity,
         private sendSignal: (msg: SignalMessage) => void,
-        private onImage: (blob: Blob, peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string) => void,
+        private onImage: (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string }) => void,
         private onTransferError: (transferId: string) => void, // NEW: Error Feedback
         private network: { canReceiveFrom: (peerId: string) => boolean },
         private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
@@ -414,7 +414,13 @@ export class PeerSession {
                 this.cleanupTransfer();
 
                 // Fire event but DONT await it here. The caller (onImage) must manage the slot release.
-                this.onImage(blob, this.peerId, isPinned, name, ttl, originalSender);
+                this.onImage(blob, {
+                    peerId: this.peerId,
+                    isPinned,
+                    name,
+                    ttl,
+                    originalSenderId: originalSender
+                });
             }
         }
     }
@@ -446,11 +452,15 @@ export class PeerSession {
         }
     }
 
-    public sendImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl?: number, originalSenderId?: string): Result<void> {
+    public sendImage(
+        blob: Blob,
+        hash: string,
+        options: { isPinned?: boolean; name?: string; ttl?: number; originalSenderId?: string } = {}
+    ): Result<void> {
         if (!this.dc || this.dc.readyState !== 'open') return err(new Error("DataChannel not open"));
 
         const transferId = Math.random().toString(36).substring(2, 11);
-        const fileName = name || (blob as File).name || 'image.png';
+        const fileName = options.name || (blob as File).name || 'image.png';
         const totalSize = blob.size;
 
         // 1. Store State
@@ -461,9 +471,9 @@ export class PeerSession {
             size: totalSize,
             mime: blob.type,
             hash,
-            isPinned,
-            ttl,
-            originalSenderId, // Phase 31
+            isPinned: options.isPinned || false,
+            ttl: options.ttl,
+            originalSenderId: options.originalSenderId, // Phase 31
             identityCreatedAt: this.identity.createdAt,
         };
 
@@ -481,10 +491,10 @@ export class PeerSession {
             size: totalSize,
             mime: blob.type,
             hash,
-            isPinned,
-            ttl,
+            isPinned: options.isPinned || false,
+            ttl: options.ttl,
         };
-        console.log(`[${this.myId}] Offering Image to ${this.peerId}: ${totalSize} bytes (${transferId}) Pinned: ${isPinned} Orig: ${originalSenderId}`);
+        console.log(`[${this.myId}] Offering Image to ${this.peerId}: ${totalSize} bytes (${transferId}) Pinned: ${options.isPinned} Orig: ${options.originalSenderId}`);
 
         try {
             this.dc.send(JSON.stringify(offer));
