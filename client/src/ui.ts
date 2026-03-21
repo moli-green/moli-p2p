@@ -38,15 +38,18 @@ export function createGalleryItem(
         img.classList.add('blurred');
     }
 
-    img.onclick = (e) => {
+    const handleImageClick = (e: MouseEvent) => {
         e.stopPropagation();
         actions.onImageClick(img.classList.contains('blurred'));
     };
 
-    container.onclick = (e) => {
+    const handleContainerClick = (e: MouseEvent) => {
         e.stopPropagation();
         actions.onContainerClick(img.classList.contains('blurred'));
     };
+
+    img.addEventListener('click', handleImageClick);
+    container.addEventListener('click', handleContainerClick);
 
     const overlay = document.createElement('div');
     overlay.className = 'card-overlay';
@@ -72,7 +75,7 @@ export function createGalleryItem(
         pinBtn.classList.add('pinned');
     }
 
-    pinBtn.onclick = (e) => {
+    const handlePinClick = (e: MouseEvent) => {
         e.stopPropagation();
         const isCurrentlyPinned = pinBtn.classList.contains('pinned');
         const willBePinned = !isCurrentlyPinned;
@@ -83,14 +86,19 @@ export function createGalleryItem(
         actions.onPinToggle(willBePinned);
     };
 
+    pinBtn.addEventListener('click', handlePinClick);
+
     const trashBtn = document.createElement('button');
     trashBtn.className = 'remove-action-btn';
     trashBtn.textContent = '🗑️';
     trashBtn.title = 'Remove & Block (Local)';
-    trashBtn.onclick = (e) => {
+
+    const handleTrashClick = (e: MouseEvent) => {
         e.stopPropagation();
         actions.onRemove();
     };
+
+    trashBtn.addEventListener('click', handleTrashClick);
 
     const rightActions = document.createElement('div');
     rightActions.style.display = 'flex';
@@ -105,6 +113,19 @@ export function createGalleryItem(
 
     container.appendChild(img);
     container.appendChild(overlay);
+
+    // Attach a cleanup method to the element
+    (container as any).cleanup = () => {
+        img.removeEventListener('click', handleImageClick);
+        container.removeEventListener('click', handleContainerClick);
+        pinBtn.removeEventListener('click', handlePinClick);
+        trashBtn.removeEventListener('click', handleTrashClick);
+
+        // Clear DOM references
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+    };
 
     return container;
 }

@@ -411,7 +411,12 @@ function checkEviction() {
     const toRemove = unpinned[0];
     const index = imageStore.findIndex(i => i.id === toRemove.id);
     if (index > -1) {
-      if (gallery.contains(toRemove.element)) gallery.removeChild(toRemove.element);
+      if (gallery.contains(toRemove.element)) {
+        gallery.removeChild(toRemove.element);
+      }
+      if (typeof (toRemove.element as any).cleanup === 'function') {
+        (toRemove.element as any).cleanup();
+      }
       URL.revokeObjectURL(toRemove.url);
       imageStoreMap.delete(toRemove.hash);
       imageStore.splice(index, 1);
@@ -428,6 +433,9 @@ function removeImageFromGallery(hash: string) {
       const item = imageStore[i];
       if (gallery.contains(item.element)) {
         gallery.removeChild(item.element);
+      }
+      if (typeof (item.element as any).cleanup === 'function') {
+        (item.element as any).cleanup();
       }
       URL.revokeObjectURL(item.url);
       imageStore.splice(i, 1);
