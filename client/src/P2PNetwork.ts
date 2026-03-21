@@ -19,7 +19,7 @@ export class P2PNetwork {
     private activeIceServers: RTCIceServer[] | undefined;
 
     constructor(
-        private onImage: (blob: Blob, peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string) => void,
+        private onImage: (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string }) => void,
         private onEvent: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
         private onPeerCountChange: (count: number) => void,
         private onTransferError: (session: PeerSession, transferId: string) => void,
@@ -70,7 +70,7 @@ export class P2PNetwork {
     }
 
     // Wrapper to handle Relay + UI Callback
-    private onImageReceived = (blob: Blob, pId: string, pinned?: boolean, name?: string, ttl?: number, originalSenderId?: string) => {
+    private onImageReceived = (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string }) => {
         // Gossip V1: Relay Logic
         const hash = blobHashRegistry.get(blob);
         let isDuplicate = false;
@@ -88,12 +88,12 @@ export class P2PNetwork {
 
         // Trigger UI (Simplified)
         // Must call onImage even for duplicates so main.ts can call releaseDownloadSlot()
-        this.onImage(blob, pId, pinned, name, ttl, originalSenderId);
+        this.onImage(blob, options);
 
         if (isDuplicate) return;
 
         // Relay
-        const currentTtl = typeof ttl === 'number' ? ttl : 0;
+        const currentTtl = typeof options.ttl === 'number' ? options.ttl : 0;
         if (currentTtl > 0) {
             // Trust No One: Clamp TTL to prevent amplification attacks
             // If neighbor sends 999, we treat it as max GOSSIP_TTL (3)
@@ -101,12 +101,17 @@ export class P2PNetwork {
             const nextTtl = clampedTtl - 1;
 
             const safeHash = hash || '';
-            console.log(`[Gossip] Relaying ${name || 'image'} to mesh (TTL: ${nextTtl}, Orig: ${currentTtl})`);
+            console.log(`[Gossip] Relaying ${options.name || 'image'} to mesh (TTL: ${nextTtl}, Orig: ${currentTtl})`);
 
             // Relay to all except sender (handled by hash check mostly, but optimize?)
             // We don't have sender SessionID here easily without tracking it up stack.
             // But 'hash' check handles cycles.
-            this.broadcastImage(blob, safeHash, pinned, name, nextTtl, undefined, originalSenderId);
+            this.broadcastImage(blob, safeHash, {
+                isPinned: options.isPinned,
+                name: options.name,
+                ttl: nextTtl,
+                originalSenderId: options.originalSenderId
+            });
         }
     }
 
@@ -373,7 +378,7 @@ export class P2PNetwork {
         return count;
     }
 
-    public broadcastImage(blob: Blob, hash: string, isPinned: boolean = false, name?: string, ttl: number = GOSSIP_TTL, excludePeerId?: string, originalSenderId?: string) {
+    public broadcastImage(blob: Blob, hash: string, options: { isPinned?: boolean, name?: string, ttl?: number, excludePeerId?: string, originalSenderId?: string } = {}) {
         // Add to own seen messages to prevent reflection
         if (!this.seenMessages.has(hash)) {
             this.seenMessages.add(hash);
@@ -388,13 +393,19 @@ export class P2PNetwork {
         // Logic: Pass originalSenderId. If undefined (origin), use myId in peerSession.sendImage?
         // Actually PeerSession.sendImage will handle it if we pass it. 
         // We should pass myId as originalSenderId if it's new.
-        // Fix: Use arguments.length to detect if originalSenderId was explicitly passed (possibly as undefined for legacy)
-        const effectiveSender = (arguments.length > 6) ? originalSenderId : this.myId;
+        // Fix: Use presence in options object to determine if originalSenderId was explicitly passed
+        const effectiveSender = ('originalSenderId' in options) ? options.originalSenderId : this.myId;
+        const ttl = options.ttl ?? GOSSIP_TTL;
 
         this.sessions.forEach(session => {
-            if (session.isConnected && session.sessionPeerId !== excludePeerId) {
+            if (session.isConnected && session.sessionPeerId !== options.excludePeerId) {
                 // Pass TTL to Send
-                session.sendImage(blob, hash, isPinned, name, ttl, effectiveSender);
+                session.sendImage(blob, hash, {
+                    isPinned: options.isPinned,
+                    name: options.name,
+                    ttl: ttl,
+                    originalSenderId: effectiveSender
+                });
                 sentCount++;
             }
         });

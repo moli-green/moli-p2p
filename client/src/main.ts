@@ -6,13 +6,13 @@ import { Vault } from './lib/vault';
 import {
   RENDER_INTERVAL_MS,
   MAX_GALLERY_ITEMS,
-  TOAST_DURATION_MS,
   NETWORK_TIMEOUT_MS,
   GOSSIP_TTL
 } from './constants';
 import { bufferToHex } from './utils';
 import type { Result } from './lib/Result';
 import { ok, err } from './lib/Result';
+import { showToast, createGalleryItem } from './ui';
 
 declare global {
   interface Window {
@@ -213,17 +213,6 @@ let tickerTimeout: ReturnType<typeof setTimeout> | null = null;
 
 
 // --- 3. Helper Functions ---
-
-function showToast(message: string, type: 'info' | 'warn' | 'error' | 'success' = 'info') {
-  const toast = document.createElement('div');
-  toast.className = `toast ${type} `;
-  toast.textContent = message;
-  toastContainer.appendChild(toast);
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    setTimeout(() => toast.remove(), 400);
-  }, TOAST_DURATION_MS);
-}
 
 function logToScreen(msg: string, color: string = '#0f0') {
   const line = document.createElement('div');
@@ -555,151 +544,74 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
     const url = URL.createObjectURL(blob);
     const timestamp = Date.now();
 
-    // --- Standard Grid Rendering ---
-    const container = document.createElement('div');
-    container.className = 'gallery-item';
+    const container = createGalleryItem(url, id, isLocal, isPinned, {
+      onPinToggle: (isNowPinned) => {
+        const item = imageStore.find(i => i.id === id);
+        if (item) {
+          item.isPinned = isNowPinned;
+          if (item.isPinned) {
+            Vault.save({
+              hash: item.hash,
+              blob,
+              name: item.caption || 'Soul',
+              size: blob.size,
+              mime: blob.type,
+              timestamp: item.timestamp,
+              originalSenderId: item.originalSenderId,
+            });
+            showToast("Pinned to Vault", "success");
+          } else {
+            Vault.remove(item.hash);
+            showToast("Unpinned", "info");
+          }
 
-    // Simple Image Tag
-    const img = document.createElement('img');
-    img.src = url;
-    img.className = 'gallery-image';
-    img.loading = 'lazy';
-
-    // Phase 31: Safety Blur (Default for remote)
-    if (!isLocal) {
-      img.classList.add('blurred');
-    }
-
-    // Click to Reveal (Toggle Blur)
-    img.onclick = (e) => {
-      e.stopPropagation();
-      if (img.classList.contains('blurred')) {
-        img.classList.remove('blurred');
-      } else {
-        // If already revealed, open Lightbox (or toggle back? Plan says "Click to Reveal")
-        // Let's make it toggle for safety/privacy re-masking
-        // Wait, Standard behavior: Click -> Open Lightbox.
-        // So: If blurred -> Unblur. If unblurred -> Lightbox (via container click).
-        // But event propagation... 
-        // If I click img, I need to stop prop if blurred.
-
-        // Actually, let's handle logic here:
-        // Handled in container.onclick?
-        // "Click to Reveal" usually implies direct interaction.
-      }
-    };
-
-    // Lightbox on Click (Only if revealed)
-    container.onclick = (e) => {
-      e.stopPropagation();
-      if (img.classList.contains('blurred')) {
-        img.classList.remove('blurred');
-        return;
-      }
-
-      lightbox.style.display = 'flex';
-      while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
-      const lbImg = document.createElement('img');
-      lbImg.src = url;
-      lightbox.appendChild(lbImg);
-    };
-
-    // Overlay for Actions (Pin/Burn)
-    const overlay = document.createElement('div');
-    overlay.className = 'card-overlay';
-
-    const label = document.createElement('div');
-    label.style.fontSize = '12px';
-    label.style.marginBottom = 'auto'; // Push actions to bottom
-    label.style.alignSelf = 'flex-start';
-    label.style.background = 'rgba(0,0,0,0.5)';
-    label.style.padding = '2px 6px';
-    label.style.borderRadius = '4px';
-    label.textContent = isLocal ? 'Original Soul' : 'Shared Soul';
-
-    // Actions Row
-    const actionRow = document.createElement('div');
-    actionRow.className = 'action-row';
-    actionRow.style.width = '100%';
-    actionRow.style.justifyContent = 'space-between';
-
-    // Pin Button
-    const pinBtn = document.createElement('button');
-    pinBtn.className = 'pin-btn';
-    pinBtn.textContent = 'Pin';
-    pinBtn.onclick = (e) => {
-      e.stopPropagation();
-      const item = imageStore.find(i => i.id === id);
-      if (item) {
-        item.isPinned = !item.isPinned;
-        pinBtn.textContent = item.isPinned ? 'Unpin' : 'Pin';
-        pinBtn.classList.toggle('pinned', item.isPinned);
-
-        if (item.isPinned) {
-          Vault.save({
-            hash: item.hash,
-            blob,
-            name: item.caption || 'Soul',
-            size: blob.size,
-            mime: blob.type,
-            timestamp: item.timestamp,
-            originalSenderId: item.originalSenderId,
+          // Optimistic Broadcast on Pin
+          network.broadcastImage(blob, item.hash, {
+            isPinned: item.isPinned,
+            name: item.caption,
+            ttl: GOSSIP_TTL,
+            originalSenderId: item.originalSenderId
           });
-          showToast("Pinned to Vault", "success");
-        } else {
-          Vault.remove(item.hash);
-          showToast("Unpinned", "info");
         }
+      },
+      onRemove: async () => {
+        const confirmMsg = isLocal
+          ? 'Remove this image from your view? (It will NOT be blocked)'
+          : 'Remove & Block this image? (It will be added to your local blacklist)';
 
-        // Optimistic Broadcast on Pin
-        network.broadcastImage(blob, item.hash, item.isPinned, item.caption, GOSSIP_TTL, undefined, item.originalSenderId);
-      }
-    };
+        if (confirm(confirmMsg)) {
+          if (!isLocal) {
+            console.log(`[Trash] Blocking remote content: ${hash}`);
+            network.addToBlacklist(hash);
+          } else {
+            console.log(`[Trash] Removing local content (No Block): ${hash}`);
+          }
 
-    if (isPinned) {
-      pinBtn.classList.add('pinned');
-      pinBtn.textContent = 'Unpin';
-    }
-
-    // Consolidated Trash Button (Phase 31)
-    const trashBtn = document.createElement('button');
-    trashBtn.className = 'remove-action-btn'; // Reuse style or new class
-    trashBtn.textContent = '🗑️';
-    trashBtn.title = 'Remove & Block (Local)';
-    trashBtn.onclick = async (e) => {
-      e.stopPropagation();
-
-      const confirmMsg = isLocal
-        ? 'Remove this image from your view? (It will NOT be blocked)'
-        : 'Remove & Block this image? (It will be added to your local blacklist)';
-
-      if (confirm(confirmMsg)) {
-        if (!isLocal) {
-          console.log(`[Trash] Blocking remote content: ${hash}`);
-          network.addToBlacklist(hash);
-        } else {
-          console.log(`[Trash] Removing local content (No Block): ${hash}`);
+          await Vault.remove(hash);
+          removeImageFromGallery(hash);
+          showToast(isLocal ? "Removed (Local)" : "Removed & Blocked", "info");
         }
-
-        await Vault.remove(hash);
-        removeImageFromGallery(hash);
-        showToast(isLocal ? "Removed (Local)" : "Removed & Blocked", "info");
+      },
+      onImageClick: (isBlurred) => {
+        if (isBlurred) {
+            // Re-fetch the img element from container to toggle class
+            const img = container.querySelector('img.gallery-image');
+            if(img) img.classList.remove('blurred');
+        }
+      },
+      onContainerClick: (isBlurred) => {
+          if(isBlurred) {
+             const img = container.querySelector('img.gallery-image');
+             if(img) img.classList.remove('blurred');
+             return;
+          }
+          lightbox.style.display = 'flex';
+          while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+          const lbImg = document.createElement('img');
+          lbImg.src = url;
+          lightbox.appendChild(lbImg);
       }
-    };
-
-    const rightActions = document.createElement('div');
-    rightActions.style.display = 'flex';
-    rightActions.style.gap = '5px';
-    rightActions.appendChild(trashBtn);
-
-    actionRow.appendChild(pinBtn);
-    actionRow.appendChild(rightActions);
-
-    overlay.appendChild(label);
-    overlay.appendChild(actionRow);
-
-    container.appendChild(img);
-    container.appendChild(overlay);
+    });
 
     // Store Item
     const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, caption: name, originalSenderId };
@@ -789,7 +701,12 @@ async function performLocalUpload(file: Blob, _name: string = 'image.png'): Prom
   });
 
   shareInventory();
-  const sentCount = network.broadcastImage(file, hash, false, _name, GOSSIP_TTL, undefined, network.myId);
+  const sentCount = network.broadcastImage(file, hash, {
+    isPinned: false,
+    name: _name,
+    ttl: GOSSIP_TTL,
+    originalSenderId: network.myId
+  });
 
   if (sentCount > 0) {
     showToast(`Broadcasted to ${sentCount} peers!`, "success");
@@ -803,12 +720,12 @@ async function performLocalUpload(file: Blob, _name: string = 'image.png'): Prom
 // --- Identity & Network Initialization ---
 
 const network = new P2PNetwork(
-  async (blob: Blob, peerId: string, _isPinned?: boolean, name?: string, _ttl?: number, originalSenderId?: string) => {
+  async (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string }) => {
     // Sovereign Safety: Incoming images are untrusted (unpinned) by default.
     // Ignored sender's isPinned status to prevent "Ghost Pinning" on receiver.
     // If originalSenderId is missing (legacy remote), it MUST be treated as remote (!isLocal).
-    const isLocal = originalSenderId === network.myId;
-    addImageToGallery(blob, isLocal, peerId, false, name, originalSenderId);
+    const isLocal = options.originalSenderId === network.myId;
+    addImageToGallery(blob, isLocal, options.peerId, false, options.name, options.originalSenderId);
   },
   (type, session, _data) => {
     // Generic Event Handler (Sync Logic)
@@ -862,7 +779,12 @@ const network = new P2PNetwork(
         .then(r => r.blob())
         .then(blob => {
           // Send Image (Tributes removed)
-          session.sendImage(blob, item.hash, item.isPinned, item.caption, GOSSIP_TTL, item.originalSenderId);
+          session.sendImage(blob, item.hash, {
+            isPinned: item.isPinned,
+            name: item.caption,
+            ttl: GOSSIP_TTL,
+            originalSenderId: item.originalSenderId
+          });
         })
         .catch(e => console.error(`[Main] Failed to load requested image:`, e));
     } else {
