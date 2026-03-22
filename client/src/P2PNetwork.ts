@@ -19,7 +19,7 @@ export class P2PNetwork {
     private activeIceServers: RTCIceServer[] | undefined;
 
     constructor(
-        private onImage: (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string }) => void,
+        private onImage: (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string, signature?: string, publicKeyBase64?: string }) => void,
         private onEvent: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
         private onPeerCountChange: (count: number) => void,
         private onTransferError: (session: PeerSession, transferId: string) => void,
@@ -70,7 +70,7 @@ export class P2PNetwork {
     }
 
     // Wrapper to handle Relay + UI Callback
-    private onImageReceived = (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string }) => {
+    private onImageReceived = (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string, signature?: string, publicKeyBase64?: string }) => {
         // Gossip V1: Relay Logic
         const hash = blobHashRegistry.get(blob);
         let isDuplicate = false;
@@ -110,7 +110,9 @@ export class P2PNetwork {
                 isPinned: options.isPinned,
                 name: options.name,
                 ttl: nextTtl,
-                originalSenderId: options.originalSenderId
+                originalSenderId: options.originalSenderId,
+                signature: options.signature,
+                publicKeyBase64: options.publicKeyBase64
             });
         }
     }
@@ -378,7 +380,7 @@ export class P2PNetwork {
         return count;
     }
 
-    public broadcastImage(blob: Blob, hash: string, options: { isPinned?: boolean, name?: string, ttl?: number, excludePeerId?: string, originalSenderId?: string } = {}) {
+    public broadcastImage(blob: Blob, hash: string, options: { isPinned?: boolean, name?: string, ttl?: number, excludePeerId?: string, originalSenderId?: string, signature?: string, publicKeyBase64?: string } = {}) {
         // Add to own seen messages to prevent reflection
         if (!this.seenMessages.has(hash)) {
             this.seenMessages.add(hash);
@@ -404,7 +406,9 @@ export class P2PNetwork {
                     isPinned: options.isPinned,
                     name: options.name,
                     ttl: ttl,
-                    originalSenderId: effectiveSender
+                    originalSenderId: effectiveSender,
+                    signature: options.signature,
+                    publicKeyBase64: options.publicKeyBase64
                 });
                 sentCount++;
             }

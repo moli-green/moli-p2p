@@ -9,7 +9,7 @@ import {
   NETWORK_TIMEOUT_MS,
   GOSSIP_TTL
 } from './constants';
-import { bufferToHex } from './utils';
+import { bufferToHex, createThumbnail } from './utils';
 import type { Result } from './lib/Result';
 import { ok, err } from './lib/Result';
 import { showToast, createGalleryItem } from './ui';
@@ -194,13 +194,16 @@ lightbox.onclick = () => {
 interface ImageItem {
   id: string;
   hash: string;
-  url: string;
+  url: string; // The thumbnail URL
+  originalBlob: Blob; // To be used when expanding
   isPinned: boolean;
   isLocal: boolean;
   timestamp: number;
   element: HTMLElement;
   caption?: string;
   originalSenderId?: string;
+  signature?: string;
+  publicKeyBase64?: string;
 }
 
 const imageStore: ImageItem[] = [];
@@ -511,7 +514,16 @@ function shareInventory() {
 
 // --- CORE: Add Image to Gallery (Refactored) ---
 // --- CORE: Add Image to Gallery (Simplified Phase 31) ---
-async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: string, isPinned: boolean = false, name?: string, originalSenderId?: string) {
+async function addImageToGallery(
+    blob: Blob,
+    isLocal: boolean,
+    remotePeerId?: string,
+    isPinned: boolean = false,
+    name?: string,
+    originalSenderId?: string,
+    signature?: string,
+    publicKeyBase64?: string
+) {
   try {
     const hashResult = await hashBlob(blob);
     if (!hashResult.ok) {
@@ -549,10 +561,18 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
     }
 
     const id = Math.random().toString(36).substring(2, 11);
-    const url = URL.createObjectURL(blob);
+
+    // Create thumbnail to save memory for gallery view
+    let thumbBlob = blob;
+    try {
+      thumbBlob = await createThumbnail(blob, 500); // 500px max dimension
+    } catch (e) {
+      console.warn(`[Thumb] Failed to generate thumbnail, falling back to original blob`, e);
+    }
+    const thumbUrl = URL.createObjectURL(thumbBlob);
     const timestamp = Date.now();
 
-    const container = createGalleryItem(url, id, isLocal, isPinned, {
+    const container = createGalleryItem(thumbUrl, id, isLocal, isPinned, {
       onPinToggle: (isNowPinned) => {
         const item = imageStore.find(i => i.id === id);
         if (item) {
@@ -578,7 +598,9 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
             isPinned: item.isPinned,
             name: item.caption,
             ttl: GOSSIP_TTL,
-            originalSenderId: item.originalSenderId
+            originalSenderId: item.originalSenderId,
+            signature: item.signature,
+            publicKeyBase64: item.publicKeyBase64
           });
         }
       },
@@ -616,13 +638,38 @@ async function addImageToGallery(blob: Blob, isLocal: boolean, remotePeerId?: st
           lightbox.style.display = 'flex';
           while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
           const lbImg = document.createElement('img');
-          lbImg.src = url;
+
+          // Generate an ephemeral URL for the original high-res blob
+          const originalUrl = URL.createObjectURL(blob);
+          lbImg.src = originalUrl;
+
+          // Revoke the original URL when lightbox is closed
+          // Fix: Prevent memory leak from nested closures
+          lightbox.onclick = () => {
+             URL.revokeObjectURL(originalUrl);
+             lightbox.style.display = 'none';
+             while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+          };
+
           lightbox.appendChild(lbImg);
       }
     });
 
     // Store Item
-    const newItem: ImageItem = { id, hash, url, isPinned, isLocal, timestamp, element: container, caption: name, originalSenderId };
+    const newItem: ImageItem = {
+      id,
+      hash,
+      url: thumbUrl,
+      originalBlob: blob,
+      isPinned,
+      isLocal,
+      timestamp,
+      element: container,
+      caption: name,
+      originalSenderId,
+      signature,
+      publicKeyBase64
+    };
     imageStoreMap.set(hash, newItem);
     imageStore.push(newItem);
 
@@ -661,7 +708,7 @@ async function initVaultAndLoad(): Promise<void> {
           true,
           item.name,
           item.originalSenderId
-        );
+        ); // Note: Assuming Vault load handles or ignores signatures for legacy
       }
     }
   }
@@ -728,12 +775,21 @@ async function performLocalUpload(file: Blob, _name: string = 'image.png'): Prom
 // --- Identity & Network Initialization ---
 
 const network = new P2PNetwork(
-  async (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string }) => {
+  async (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string, signature?: string, publicKeyBase64?: string }) => {
     // Sovereign Safety: Incoming images are untrusted (unpinned) by default.
     // Ignored sender's isPinned status to prevent "Ghost Pinning" on receiver.
     // If originalSenderId is missing (legacy remote), it MUST be treated as remote (!isLocal).
     const isLocal = options.originalSenderId === network.myId;
-    addImageToGallery(blob, isLocal, options.peerId, false, options.name, options.originalSenderId);
+    addImageToGallery(
+      blob,
+      isLocal,
+      options.peerId,
+      false,
+      options.name,
+      options.originalSenderId,
+      options.signature,
+      options.publicKeyBase64
+    );
   },
   (type, session, _data) => {
     // Generic Event Handler (Sync Logic)
@@ -783,18 +839,19 @@ const network = new P2PNetwork(
     const item = imageStoreMap.get(hash);
     if (item) {
       console.log(`[Main] Peer ${session.sessionPeerId} requested ${hash.substring(0, 8)}. Sending...`);
-      fetch(item.url)
-        .then(r => r.blob())
-        .then(blob => {
-          // Send Image (Tributes removed)
-          session.sendImage(blob, item.hash, {
-            isPinned: item.isPinned,
-            name: item.caption,
-            ttl: GOSSIP_TTL,
-            originalSenderId: item.originalSenderId
-          });
-        })
-        .catch(e => console.error(`[Main] Failed to load requested image:`, e));
+      // Send the original Blob instead of fetching from thumbnail URL
+      try {
+        session.sendImage(item.originalBlob, item.hash, {
+          isPinned: item.isPinned,
+          name: item.caption,
+          ttl: GOSSIP_TTL,
+          originalSenderId: item.originalSenderId,
+          signature: item.signature,
+          publicKeyBase64: item.publicKeyBase64
+        });
+      } catch (e) {
+        console.error(`[Main] Failed to send requested image:`, e);
+      }
     } else {
       console.warn(`[Main] Peer requested unknown hash: ${hash}`);
     }
@@ -981,18 +1038,10 @@ window.moliAPI = {
   getImageContent: async (hash: string) => {
     const item = imageStoreMap.get(hash);
     if (!item) return null;
-    // Return base64 or blob url? The interface implied content.
-    // Let's return the Blob URL for now, or read it to base64 if needed.
-    // "getImageContent" usually implies data.
     return new Promise((resolve) => {
-      fetch(item.url)
-        .then(r => r.blob())
-        .then(blob => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        })
-        .catch(() => resolve(null));
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(item.originalBlob);
     });
   }
 };
