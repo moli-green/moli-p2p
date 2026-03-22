@@ -29,6 +29,8 @@ interface FileMetadata {
     identityCreatedAt?: number;
     isPinned?: boolean;
     ttl?: number; // Gossip V1
+    signature?: string; // Phase X: Cryptographic Signature
+    publicKeyBase64?: string; // Spki format base64 encoded
 }
 
 export class PeerSession {
@@ -80,7 +82,7 @@ export class PeerSession {
         private _peerId: string, // SessionID
         private identity: PeerIdentity,
         private sendSignal: (msg: SignalMessage) => void,
-        private onImage: (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string }) => void,
+        private onImage: (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string, signature?: string, publicKeyBase64?: string }) => void,
         private onTransferError: (transferId: string) => void, // NEW: Error Feedback
         private network: { canReceiveFrom: (peerId: string) => boolean },
         private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
@@ -301,11 +303,41 @@ export class PeerSession {
                         return;
                     }
 
-                    // 3. Cryptographic Identity Check (Simplified to just Age/Pin)
-                    // We removed signature verification as part of Phase 30 Cleanup.
-                    // We still pass identityCreatedAt for trust age, but don't verify it cryptographically per-file.
-                    // This is a trade-off for simplicity.
-                    // The PeerIdentity still exists for stable IDs.
+                    // 3. Cryptographic Identity Check (Restored for Security)
+                    if (msg.originalSenderId && msg.signature && msg.publicKeyBase64) {
+                        try {
+                            const spki = Uint8Array.from(atob(msg.publicKeyBase64), c => c.charCodeAt(0)).buffer;
+                            const publicKey = await this.identity.importPublicKey(spki);
+                            const isValid = await this.identity.verifyMetadata(
+                                publicKey,
+                                msg.signature,
+                                msg.name,
+                                msg.size,
+                                msg.hash,
+                                msg.identityCreatedAt || 0,
+                                msg.isPinned || false
+                            );
+
+                            if (!isValid) {
+                                console.error(`[${this.myId}] SECURITY ALERT: Invalid signature for ${msg.name}. Dropping forged originalSenderId.`);
+                                msg.originalSenderId = undefined; // Sanitize
+                            } else {
+                                // Double check if the provided public key actually matches the declared originalSenderId
+                                // To do this perfectly we should derive the PeerID from the spki.
+                                // We can use window.crypto.subtle.digest here or just assume PeerIdentity logic.
+                                const hashBuffer = await window.crypto.subtle.digest('SHA-256', spki);
+                                const hashHex = bufferToHex(hashBuffer);
+                                const derivedId = hashHex.substring(0, 16);
+                                if (derivedId !== msg.originalSenderId) {
+                                     console.error(`[${this.myId}] SECURITY ALERT: PublicKey does not match declared originalSenderId. Dropping forged originalSenderId.`);
+                                     msg.originalSenderId = undefined;
+                                }
+                            }
+                        } catch (e) {
+                             console.error(`[${this.myId}] Error verifying signature:`, e);
+                             msg.originalSenderId = undefined; // Sanitize on error
+                        }
+                    }
 
                     console.log(`[${this.myId}] Starting Receive: ${msg.name} (${msg.size} bytes)`);
                     this.currentMeta = msg;
@@ -409,6 +441,8 @@ export class PeerSession {
                 const isPinned = this.currentMeta.isPinned;
                 const name = this.currentMeta.name;
                 const ttl = this.currentMeta.ttl;
+                const signature = this.currentMeta.signature;
+                const publicKeyBase64 = this.currentMeta.publicKeyBase64;
 
                 // Reset state BEFORE calling onImage to allow next transfer instantly
                 this.cleanupTransfer();
@@ -419,7 +453,9 @@ export class PeerSession {
                     isPinned,
                     name,
                     ttl,
-                    originalSenderId: originalSender
+                    originalSenderId: originalSender,
+                    signature,
+                    publicKeyBase64
                 });
             }
         }
@@ -452,16 +488,31 @@ export class PeerSession {
         }
     }
 
-    public sendImage(
+    public async sendImage(
         blob: Blob,
         hash: string,
-        options: { isPinned?: boolean; name?: string; ttl?: number; originalSenderId?: string } = {}
-    ): Result<void> {
+        options: { isPinned?: boolean; name?: string; ttl?: number; originalSenderId?: string; signature?: string; publicKeyBase64?: string } = {}
+    ): Promise<Result<void>> {
         if (!this.dc || this.dc.readyState !== 'open') return err(new Error("DataChannel not open"));
 
         const transferId = Math.random().toString(36).substring(2, 11);
         const fileName = options.name || (blob as File).name || 'image.png';
         const totalSize = blob.size;
+
+        let signature = options.signature;
+        let publicKeyBase64 = options.publicKeyBase64;
+
+        // If we are the original sender, and we don't have a signature yet, sign it
+        if ((options.originalSenderId === this.myId || options.originalSenderId === undefined) && !signature) {
+             try {
+                  signature = await this.identity.signMetadata(fileName, totalSize, hash, options.isPinned || false);
+                  if (this.identity.publicKeySpki) {
+                       publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(this.identity.publicKeySpki)));
+                  }
+             } catch (e) {
+                  console.error(`[${this.myId}] Failed to sign metadata:`, e);
+             }
+        }
 
         // 1. Store State
         const metadata: FileMetadata = {
@@ -475,6 +526,8 @@ export class PeerSession {
             ttl: options.ttl,
             originalSenderId: options.originalSenderId, // Phase 31
             identityCreatedAt: this.identity.createdAt,
+            signature,
+            publicKeyBase64
         };
 
         this.pendingUploads.set(transferId, {
