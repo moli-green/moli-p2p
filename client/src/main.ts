@@ -969,8 +969,71 @@ if (idBurnBtn) {
   };
 }
 
+// --- Phase 65: Mobile Warning Gate ---
+function checkMobileWarning(): Promise<void> {
+  return new Promise((resolve) => {
+    // Detect smart phones and mobile user agents
+    const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    // Detect iPads masquerading as Mac desktop safari but with touch points
+    const isTablet = navigator.maxTouchPoints && navigator.maxTouchPoints > 1 && /MacIntel/.test(navigator.userAgent);
+    const isMobile = isMobileUserAgent || isTablet;
+
+    if (!isMobile) {
+      resolve();
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'mobile-gate-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'mobile-gate-card';
+
+    const h2 = document.createElement('h2');
+    h2.innerHTML = '⚠️ Mobile Device Detected';
+
+    const p1 = document.createElement('p');
+    p1.textContent = 'Moli P2P is a heavy WebRTC mesh protocol designed for Desktop PCs and Wi-Fi networks.';
+    
+    const p2 = document.createElement('p');
+    p2.textContent = 'Joining the mesh on this device will consume massive amounts of cellular data, drastically drain battery life, and may crash your browser due to strict memory limits.';
+
+    const actions = document.createElement('div');
+    actions.className = 'mobile-gate-actions';
+
+    const leaveBtn = document.createElement('button');
+    leaveBtn.className = 'leave-btn';
+    leaveBtn.textContent = 'Leave App';
+    leaveBtn.onclick = () => {
+      window.location.href = 'https://google.com';
+    };
+
+    const agreeBtn = document.createElement('button');
+    agreeBtn.className = 'agree-btn';
+    agreeBtn.innerHTML = 'I Understand Risks<br>Connect Anyway';
+    agreeBtn.onclick = () => {
+      document.body.removeChild(overlay);
+      resolve();
+    };
+
+    actions.appendChild(leaveBtn);
+    actions.appendChild(agreeBtn);
+
+    card.appendChild(h2);
+    card.appendChild(p1);
+    card.appendChild(p2);
+    card.appendChild(actions);
+    overlay.appendChild(card);
+
+    document.body.appendChild(overlay);
+  });
+}
+
 (async () => {
   try {
+    // Await User Opt-In on Mobile/Tablets
+    await checkMobileWarning();
+
     // Secure ICE Config Fetch
     let iceServers;
     if (window.location.hostname !== 'localhost') {

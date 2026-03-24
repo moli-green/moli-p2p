@@ -1138,3 +1138,88 @@ button:hover {
 .card-overlay {
   z-index: 10;
 }
+
+/* --- Phase 65: Mobile Warning Gate --- */
+.mobile-gate-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(20, 20, 20, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 99999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.mobile-gate-card {
+  background: #2a2a2a;
+  border-radius: 12px;
+  padding: 30px 20px;
+  max-width: 500px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+  border: 1px solid #444;
+}
+
+.mobile-gate-card h2 {
+  color: #ff4a4a;
+  margin-top: 0;
+  font-size: 1.5em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.mobile-gate-card p {
+  color: #ccc;
+  font-size: 1em;
+  line-height: 1.6;
+  margin: 15px 0;
+  padding: 0 10px;
+}
+
+.mobile-gate-actions {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-top: 25px;
+}
+
+.mobile-gate-actions button {
+  padding: 12px 24px;
+  font-size: 1em;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.mobile-gate-actions button.agree-btn {
+  background-color: #ff4a4a;
+  color: white;
+  border: none;
+  font-weight: bold;
+}
+
+.mobile-gate-actions button.agree-btn:hover {
+  background-color: #ff2a2a;
+  transform: scale(1.05);
+}
+
+.mobile-gate-actions button.leave-btn {
+  background-color: transparent;
+  color: #888;
+  border: 1px solid #555;
+}
+
+.mobile-gate-actions button.leave-btn:hover {
+  background-color: rgba(255,255,255,0.1);
+  color: #fff;
+}
