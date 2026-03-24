@@ -501,7 +501,7 @@ export class PeerSession {
     ): Promise<Result<void>> {
         if (!this.dc || this.dc.readyState !== 'open') return err(new Error("DataChannel not open"));
 
-        const transferId = Math.random().toString(36).substring(2, 11);
+        const transferId = crypto.randomUUID();
         const fileName = options.name || (blob as File).name || 'image.png';
         const totalSize = blob.size;
 
