@@ -1,5 +1,7 @@
 export const HEX_STRINGS = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 
+export const TEXT_ENCODER = new TextEncoder();
+
 export function bufferToHex(buffer: ArrayBuffer): string {
     const uint8Array = new Uint8Array(buffer);
     let hex = '';

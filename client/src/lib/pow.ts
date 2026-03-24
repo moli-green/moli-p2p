@@ -1,16 +1,15 @@
-import { bufferToHex } from '../utils';
+import { bufferToHex, TEXT_ENCODER } from '../utils';
 
 export async function generatePoW(peerId: string, timestamp: number, difficulty: number = 4): Promise<{ nonce: string; duration: number }> {
     const start = Date.now();
     const prefix = '0'.repeat(difficulty);
     let nonce = 0;
-    const encoder = new TextEncoder();
 
     console.log(`[PoW] Starting challenge (Difficulty: ${difficulty})...`);
 
     while (true) {
         const nonceStr = nonce.toString();
-        const data = encoder.encode(peerId + timestamp + nonceStr);
+        const data = TEXT_ENCODER.encode(peerId + timestamp + nonceStr);
         const hashBuffer = await crypto.subtle.digest('SHA-256', data);
         const hashHex = bufferToHex(hashBuffer);
 
