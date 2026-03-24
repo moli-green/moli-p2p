@@ -456,8 +456,9 @@ const downloadQueue: { session: PeerSession; transferId: string; meta: any }[] =
 function processDownloadQueue() {
   console.log(`[Scheduler] ProcessQueue: Active=${activeDownloadCount}, Queue=${downloadQueue.length}`);
   if (activeDownloadCount >= MAX_CONCURRENT_DOWNLOADS || downloadQueue.length === 0) return;
-  while (activeDownloadCount < MAX_CONCURRENT_DOWNLOADS && downloadQueue.length > 0) {
-    const task = downloadQueue.shift()!;
+  const availableSlots = MAX_CONCURRENT_DOWNLOADS - activeDownloadCount;
+  const tasksToProcess = downloadQueue.splice(0, availableSlots);
+  for (const task of tasksToProcess) {
     activeDownloadCount++;
     console.log(`[Scheduler] STARTING PULL ${task.meta.name} from ${task.session.peerId} (Active: ${activeDownloadCount})`);
     task.session.pullFile(task.transferId);
@@ -486,17 +487,21 @@ function processUploadQueue() {
   console.log(`[Scheduler] ProcessUploadQueue: Active=${activeUploadCount}, Queue=${uploadQueue.length}`);
   if (activeUploadCount >= MAX_CONCURRENT_UPLOADS || uploadQueue.length === 0) return;
 
-  const task = uploadQueue.shift()!;
-  activeUploadCount++;
-  console.log(`[Scheduler] STARTING UPLOAD ${task.name} (Active: ${activeUploadCount})`);
+  const availableSlots = MAX_CONCURRENT_UPLOADS - activeUploadCount;
+  const tasksToProcess = uploadQueue.splice(0, availableSlots);
 
-  // Execute actual upload logic (detached to prevent blocking scheduler)
-  performLocalUpload(task.blob, task.name)
-    .then(task.resolve)
-    .catch(task.reject)
-    .finally(() => {
-      releaseUploadSlot();
-    });
+  for (const task of tasksToProcess) {
+    activeUploadCount++;
+    console.log(`[Scheduler] STARTING UPLOAD ${task.name} (Active: ${activeUploadCount})`);
+
+    // Execute actual upload logic (detached to prevent blocking scheduler)
+    performLocalUpload(task.blob, task.name)
+      .then(task.resolve)
+      .catch(task.reject)
+      .finally(() => {
+        releaseUploadSlot();
+      });
+  }
 }
 
 function releaseUploadSlot() {

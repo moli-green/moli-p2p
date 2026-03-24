@@ -228,10 +228,13 @@ export class PeerSession {
         if (this.candidateQueue.length > 0) {
             console.log(`[${this.myId}] Flushing ${this.candidateQueue.length} buffered candidates`);
             while (this.candidateQueue.length > 0) {
-                const cand = this.candidateQueue.shift();
-                if (cand) {
-                    const iceResult = await wrapPromise(this.pc.addIceCandidate(cand));
-                    if (!iceResult.ok) return err(new Error(`Failed to add buffered candidate: ${iceResult.error}`));
+                const currentBatch = this.candidateQueue;
+                this.candidateQueue = [];
+                for (const cand of currentBatch) {
+                    if (cand) {
+                        const iceResult = await wrapPromise(this.pc.addIceCandidate(cand));
+                        if (!iceResult.ok) return err(new Error(`Failed to add buffered candidate: ${iceResult.error}`));
+                    }
                 }
             }
         }
@@ -258,8 +261,11 @@ export class PeerSession {
         this.isProcessingIncoming = true;
 
         while (this.incomingQueue.length > 0) {
-            const ev = this.incomingQueue.shift()!;
-            await this.handleDataMessage(ev);
+            const currentBatch = this.incomingQueue;
+            this.incomingQueue = [];
+            for (const ev of currentBatch) {
+                await this.handleDataMessage(ev);
+            }
         }
 
         this.isProcessingIncoming = false;
@@ -566,16 +572,22 @@ export class PeerSession {
         if (!this.dc || this.dc.readyState !== 'open') return;
 
         this.isTransferring = true;
-        const item = this.transferQueue.shift()!;
 
         try {
-            await this.transferFile(item.transferId, item.upload);
-        } catch (e) {
-            console.error(`[${this.myId}] Transfer failed for ${item.transferId}`, e);
+            while (this.transferQueue.length > 0 && this.dc && this.dc.readyState === 'open') {
+                const currentBatch = this.transferQueue;
+                this.transferQueue = [];
+                for (const item of currentBatch) {
+                    if (!this.dc || this.dc.readyState !== 'open') break;
+                    try {
+                        await this.transferFile(item.transferId, item.upload);
+                    } catch (e) {
+                        console.error(`[${this.myId}] Transfer failed for ${item.transferId}`, e);
+                    }
+                }
+            }
         } finally {
             this.isTransferring = false;
-            // Process next item
-            this.processTransferQueue();
         }
     }
 
