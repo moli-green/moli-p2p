@@ -1,4 +1,4 @@
-import { bufferToHex } from './utils';
+import { bufferToHex, TEXT_ENCODER } from './utils';
 
 const DB_NAME = 'moli_id_db';
 const STORE_NAME = 'keys';
@@ -59,9 +59,8 @@ export class PeerIdentity {
 
     async signMetadata(name: string, size: number, hash: string, isPinned: boolean = false): Promise<string> {
         if (!this.keyPair) throw new Error('Identity not initialized');
-        const encoder = new TextEncoder();
         // Include createdAt and isPinned in signed data to prove age and vetting
-        const data = encoder.encode(`${name}:${size}:${hash}:${this.createdAt}:${isPinned}`);
+        const data = TEXT_ENCODER.encode(`${name}:${size}:${hash}:${this.createdAt}:${isPinned}`);
 
         const signature = await window.crypto.subtle.sign(
             { name: "ECDSA", hash: { name: "SHA-256" } },
@@ -74,8 +73,7 @@ export class PeerIdentity {
 
     async verifyMetadata(publicKey: CryptoKey, signatureBase64: string, name: string, size: number, hash: string, createdAt: number, isPinned: boolean = false): Promise<boolean> {
         try {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(`${name}:${size}:${hash}:${createdAt}:${isPinned}`);
+            const data = TEXT_ENCODER.encode(`${name}:${size}:${hash}:${createdAt}:${isPinned}`);
             const signature = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
 
             return await window.crypto.subtle.verify(
@@ -92,8 +90,7 @@ export class PeerIdentity {
 
     async signBurn(hash: string): Promise<string> {
         if (!this.keyPair) throw new Error('Identity not initialized');
-        const encoder = new TextEncoder();
-        const data = encoder.encode(`burn:${hash}:${this.createdAt}`);
+        const data = TEXT_ENCODER.encode(`burn:${hash}:${this.createdAt}`);
 
         const signature = await window.crypto.subtle.sign(
             { name: "ECDSA", hash: { name: "SHA-256" } },
@@ -106,8 +103,7 @@ export class PeerIdentity {
 
     async verifyBurn(publicKey: CryptoKey, signatureBase64: string, hash: string, createdAt: number): Promise<boolean> {
         try {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(`burn:${hash}:${createdAt}`);
+            const data = TEXT_ENCODER.encode(`burn:${hash}:${createdAt}`);
             const signature = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
 
             return await window.crypto.subtle.verify(

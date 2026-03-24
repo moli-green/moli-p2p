@@ -246,9 +246,8 @@ function processTicker() {
       const nextItem = renderQueue.shift()!;
 
       // FIX: Check if item is still in imageStore before appending. (Ghost Image Fix)
-      // Optimization: use a Set if it gets too large, but for 50 items `some` is fine.
-      // Alternatively we can check if it exists in the array directly.
-      const exists = imageStore.some(i => i.id === nextItem.id);
+      // Optimization: O(1) lookup using imageStoreMap instead of O(N) array some()
+      const exists = imageStoreMap.has(nextItem.hash);
       if (!exists) {
         console.log(`[Ticker] Skipped evicted item: ${nextItem.id}`);
         tickerTimeout = setTimeout(processTicker, 0); // Recursive call to process next immediately
@@ -409,10 +408,15 @@ function updateEmptyState() {
 
 function checkEviction() {
   if (imageStore.length <= MAX_GALLERY_ITEMS) return;
+
+  // Sort once, then batch remove the oldest items until under the limit
   const unpinned = imageStore.filter(i => !i.isPinned).sort((a, b) => a.timestamp - b.timestamp);
-  if (unpinned.length > 0) {
-    const toRemove = unpinned[0];
-    const index = imageStore.findIndex(i => i.id === toRemove.id);
+  let evictionCount = imageStore.length - MAX_GALLERY_ITEMS;
+
+  for (let i = 0; i < unpinned.length && evictionCount > 0; i++) {
+    const toRemove = unpinned[i];
+    const index = imageStore.findIndex(item => item.id === toRemove.id);
+
     if (index > -1) {
       if (gallery.contains(toRemove.element)) {
         gallery.removeChild(toRemove.element);
@@ -423,7 +427,7 @@ function checkEviction() {
       URL.revokeObjectURL(toRemove.url);
       imageStoreMap.delete(toRemove.hash);
       imageStore.splice(index, 1);
-      if (imageStore.length > MAX_GALLERY_ITEMS) checkEviction();
+      evictionCount--;
     }
   }
   updateEmptyState();
