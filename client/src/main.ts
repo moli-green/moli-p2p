@@ -569,7 +569,7 @@ async function addImageToGallery(
       return;
     }
 
-    const id = Math.random().toString(36).substring(2, 11);
+    const id = crypto.randomUUID();
 
     // Create thumbnail to save memory for gallery view
     let thumbBlob = blob;
@@ -759,10 +759,10 @@ async function performLocalUpload(file: Blob, _name: string = 'image.png'): Prom
     mime: file.type,
     timestamp: Date.now(),
     originalSenderId: network.myId,
-  }).then(() => {
-    console.log(`[Vault] Auto-pinned original upload: ${hash.slice(0, 8)} `);
-    addImageToGallery(file, true, undefined, true, _name, network.myId); // isPinned = true
   });
+
+  console.log(`[Vault] Auto-pinned original upload: ${hash.slice(0, 8)} `);
+  await addImageToGallery(file, true, undefined, true, _name, network.myId); // isPinned = true
 
   shareInventory();
   const sentCount = network.broadcastImage(file, hash, {
@@ -789,7 +789,7 @@ const network = new P2PNetwork(
     // Ignored sender's isPinned status to prevent "Ghost Pinning" on receiver.
     // If originalSenderId is missing (legacy remote), it MUST be treated as remote (!isLocal).
     const isLocal = options.originalSenderId === network.myId;
-    addImageToGallery(
+    await addImageToGallery(
       blob,
       isLocal,
       options.peerId,
