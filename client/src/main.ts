@@ -13,6 +13,7 @@ import { bufferToHex, createThumbnail } from './utils';
 import type { Result } from './lib/Result';
 import { ok, err } from './lib/Result';
 import { showToast, createGalleryItem } from './ui';
+import { TrustStore, TrustStatus } from './lib/trust';
 
 declare global {
   interface Window {
@@ -571,6 +572,14 @@ async function addImageToGallery(
 
     const id = crypto.randomUUID();
 
+    // Sovereign Discovery: Check Trust Status
+    let isTrusted = false;
+    let trustStatus: TrustStatus | undefined;
+    if (publicKeyBase64) {
+      trustStatus = TrustStore.getTrustStatusSync(publicKeyBase64);
+      isTrusted = trustStatus === TrustStatus.DIRECT_TRUST;
+    }
+
     // Create thumbnail to save memory for gallery view
     let thumbBlob = blob;
     try {
@@ -581,8 +590,8 @@ async function addImageToGallery(
     const thumbUrl = URL.createObjectURL(thumbBlob);
     const timestamp = Date.now();
 
-    const container = createGalleryItem(thumbUrl, id, isLocal, isPinned, {
-      onPinToggle: (isNowPinned) => {
+    const container = createGalleryItem(thumbUrl, id, isLocal, isPinned, isTrusted, {
+      onPinToggle: (isNowPinned: boolean) => {
         const item = imageStore.find(i => i.id === id);
         if (item) {
           item.isPinned = isNowPinned;
@@ -631,14 +640,14 @@ async function addImageToGallery(
           showToast(isLocal ? "Removed (Local)" : "Removed & Blocked", "info");
         }
       },
-      onImageClick: (isBlurred) => {
+      onImageClick: (isBlurred: boolean) => {
         if (isBlurred) {
             // Re-fetch the img element from container to toggle class
             const img = container.querySelector('img.gallery-image');
             if(img) img.classList.remove('blurred');
         }
       },
-      onContainerClick: (isBlurred) => {
+      onContainerClick: (isBlurred: boolean) => {
           if(isBlurred) {
              const img = container.querySelector('img.gallery-image');
              if(img) img.classList.remove('blurred');
@@ -661,8 +670,109 @@ async function addImageToGallery(
           };
 
           lightbox.appendChild(lbImg);
+
+          const actionContainer = document.createElement('div');
+          actionContainer.className = 'lightbox-actions';
+          actionContainer.style.position = 'absolute';
+          actionContainer.style.bottom = '20px';
+          actionContainer.style.display = 'flex';
+          actionContainer.style.gap = '10px';
+
+          if (!isLocal && publicKeyBase64) {
+              const lbTrustBtn = document.createElement('button');
+              lbTrustBtn.className = 'lightbox-btn trust-action-btn';
+              lbTrustBtn.textContent = '⭐ Trust User';
+
+              const currentStatus = TrustStore.getTrustStatusSync(publicKeyBase64);
+              if (currentStatus === TrustStatus.DIRECT_TRUST) {
+                  lbTrustBtn.classList.add('trusted');
+              }
+
+              lbTrustBtn.addEventListener('click', async (e) => {
+                  e.stopPropagation();
+                  await TrustStore.setTrustStatus(publicKeyBase64, TrustStatus.DIRECT_TRUST);
+                  showToast('User Trusted', 'success');
+                  lbTrustBtn.classList.add('trusted');
+
+                  if (network && originalSenderId) {
+                      if (typeof (network as any).requestTrustList === 'function') {
+                          (network as any).requestTrustList(publicKeyBase64);
+                      }
+                  }
+
+                  for (const storeItem of imageStore) {
+                      if (storeItem.publicKeyBase64 === publicKeyBase64) {
+                          const imgNode = storeItem.element.querySelector('img.gallery-image');
+                          if (imgNode) imgNode.classList.remove('blurred');
+                          const cardTrustBtn = storeItem.element.querySelector('.trust-action-btn');
+                          if (cardTrustBtn) {
+                              cardTrustBtn.classList.add('trusted');
+                              (cardTrustBtn as HTMLElement).title = 'User Trusted';
+                          }
+                      }
+                  }
+              });
+              actionContainer.appendChild(lbTrustBtn);
+          }
+
+          const saveBtn = document.createElement('button');
+          saveBtn.className = 'lightbox-btn pin-btn';
+          saveBtn.textContent = isPinned ? 'Unpin' : 'Pin to Vault';
+          if (isPinned) saveBtn.classList.add('pinned');
+
+          saveBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              // Fire the onPinToggle logic from the card
+              const cardPinBtn = container.querySelector('.pin-btn') as HTMLElement;
+              if (cardPinBtn) {
+                  cardPinBtn.click();
+                  const isNowPinned = cardPinBtn.classList.contains('pinned');
+                  saveBtn.textContent = isNowPinned ? 'Unpin' : 'Pin to Vault';
+                  saveBtn.classList.toggle('pinned', isNowPinned);
+              }
+          });
+          actionContainer.appendChild(saveBtn);
+
+          lightbox.appendChild(actionContainer);
+      },
+      onTrustClick: async () => {
+        if (publicKeyBase64) {
+          await TrustStore.setTrustStatus(publicKeyBase64, TrustStatus.DIRECT_TRUST);
+          showToast('User Trusted', 'success');
+
+          if (network && originalSenderId) {
+            if (typeof (network as any).requestTrustList === 'function') {
+                (network as any).requestTrustList(publicKeyBase64);
+            }
+          }
+
+          // Re-render gallery items from this user to remove blur
+          for (const storeItem of imageStore) {
+            if (storeItem.publicKeyBase64 === publicKeyBase64) {
+              const img = storeItem.element.querySelector('img.gallery-image');
+              if (img) img.classList.remove('blurred');
+              const trustBtn = storeItem.element.querySelector('.trust-action-btn');
+              if (trustBtn) {
+                trustBtn.classList.add('trusted');
+                (trustBtn as HTMLElement).title = 'User Trusted';
+              }
+            }
+          }
+        }
       }
     });
+
+    if (trustStatus === TrustStatus.RECOMMENDED) {
+        const img = container.querySelector('img.gallery-image');
+        if (img) {
+            img.classList.add('recommended');
+        }
+    } else if (trustStatus === TrustStatus.DIRECT_TRUST) {
+        const img = container.querySelector('img.gallery-image');
+        if (img) {
+            img.classList.remove('blurred');
+        }
+    }
 
     // Store Item
     const newItem: ImageItem = {

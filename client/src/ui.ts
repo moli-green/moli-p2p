@@ -19,11 +19,13 @@ export function createGalleryItem(
     _id: string,
     isLocal: boolean,
     isPinned: boolean,
+    isTrusted: boolean,
     actions: {
         onPinToggle: (isNowPinned: boolean) => void,
         onRemove: () => void,
         onImageClick: (isBlurred: boolean) => void,
         onContainerClick: (isBlurred: boolean) => void,
+        onTrustClick: () => void,
     }
 ): HTMLElement {
     const container = document.createElement('div');
@@ -88,6 +90,34 @@ export function createGalleryItem(
 
     pinBtn.addEventListener('click', handlePinClick);
 
+    const rightActions = document.createElement('div');
+    rightActions.style.display = 'flex';
+    rightActions.style.gap = '5px';
+
+    let trustBtn: HTMLButtonElement | null = null;
+    let handleTrustClick: ((e: MouseEvent) => void) | null = null;
+    if (!isLocal) {
+        trustBtn = document.createElement('button');
+        trustBtn.className = 'trust-action-btn';
+        trustBtn.textContent = '⭐';
+        trustBtn.title = 'Trust User';
+        if (isTrusted) {
+            trustBtn.classList.add('trusted');
+            trustBtn.title = 'User Trusted';
+        }
+
+        handleTrustClick = (e: MouseEvent) => {
+            e.stopPropagation();
+            if (trustBtn) {
+                trustBtn.classList.add('trusted');
+                trustBtn.title = 'User Trusted';
+            }
+            actions.onTrustClick();
+        };
+        trustBtn.addEventListener('click', handleTrustClick);
+        rightActions.appendChild(trustBtn);
+    }
+
     const trashBtn = document.createElement('button');
     trashBtn.className = 'remove-action-btn';
     trashBtn.textContent = '🗑️';
@@ -99,10 +129,6 @@ export function createGalleryItem(
     };
 
     trashBtn.addEventListener('click', handleTrashClick);
-
-    const rightActions = document.createElement('div');
-    rightActions.style.display = 'flex';
-    rightActions.style.gap = '5px';
     rightActions.appendChild(trashBtn);
 
     actionRow.appendChild(pinBtn);
@@ -120,6 +146,9 @@ export function createGalleryItem(
         container.removeEventListener('click', handleContainerClick);
         pinBtn.removeEventListener('click', handlePinClick);
         trashBtn.removeEventListener('click', handleTrashClick);
+        if (trustBtn && handleTrustClick) {
+            trustBtn.removeEventListener('click', handleTrustClick);
+        }
 
         // Clear DOM references
         while (container.firstChild) {
