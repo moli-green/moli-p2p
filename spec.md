@@ -640,3 +640,26 @@ This object bridges the internal P2P logic to the browser console or external sc
 - **Issue**: Images requested via P2P "Pull" (Anti-Entropy missing hash requests) were missing the `originalSenderId` parameter when served. This caused receiving nodes to falsely flag incoming images as "Local" (`isLocal = true`), bypassing the Sovereign Safety "Blur by Default" filter.
 - **Solution**: The Provider callback (`main.ts`) now explicitly passes `item.originalSenderId` into `session.sendImage()`.
 - **Effect**: Complete restoration of the default safety blur on all non-local images, regardless of whether they were pushed actively or pulled passively.
+
+## 22. Sovereign Discovery (Trust On-Demand) (v1.8.0)
+
+### A. The Challenge of "Web of Trust"
+While PGP-style "Web of Trust" (global trust graphs) provides discovery, it inherently conflicts with the "My Computer, My Castle" (Sakoku) philosophy. Broadcasting who you trust to the entire network creates privacy risks and enables transitive trust exploits.
+
+### B. The Sovereign Solution: On-Demand Pull & Gradation UI
+To improve the user experience (UX) of discovering safe content without compromising local sovereignty, we introduced a localized, on-demand trust system:
+
+1.  **Local Trust Storage (`moli_trust_db`)**:
+    -   Users can explicitly "Trust" a specific sender (public key) via a UI button (⭐).
+    -   This state (`DIRECT_TRUST`) is saved **only** in the local IndexedDB.
+
+2.  **On-Demand Protocol (DataChannel)**:
+    -   When a user clicks "Trust", the client sends a direct, one-time `request-trust-list` message to that specific peer.
+    -   The peer responds with their *own* local `DIRECT_TRUST` list (`trust-list-response`).
+    -   The receiving client saves these keys locally as `RECOMMENDED`.
+    -   **Crucially**: This data is *never* broadcasted to the mesh.
+
+3.  **Safety Mask Gradation**:
+    -   **Unknown (Default)**: Strong blur (`blur(20px)`). Requires click to reveal.
+    -   **Recommended**: Weak blur (`blur(8px)`) with a golden visual indicator (border/shadow).
+    -   **Direct Trust**: Fully clear (`blur(0px)`).
