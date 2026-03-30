@@ -1563,12 +1563,13 @@ function showHelpModal() {
   const sectionPhilo = document.createElement('div');
   sectionPhilo.className = 'help-section';
   const h3Philo = document.createElement('h3');
-  h3Philo.textContent = '⏳ Ephemeral Capacity';
+  h3Philo.textContent = '🌊 The River vs 🏰 The Vault';
   const pPhilo = document.createElement('p');
   pPhilo.innerHTML = `
-    <strong>Max Capacity: 50 Images</strong><br>
-    Your browser holds the latest 50 souls. When new ones arrive, the oldest unpinned ones are extinguished to make room.<br>
-    <em>"The fire must breathe."</em>
+    <strong>River (Live): Max 50 Images</strong><br>
+    The River flows constantly. When new souls arrive, the oldest ones are washed away.<br>
+    <strong>Vault (Saved): Your Castle</strong><br>
+    Pinning a soul moves it to your Vault. It is saved securely in your browser and automatically seeded to the network to keep the culture alive.
   `;
   sectionPhilo.appendChild(h3Philo);
   sectionPhilo.appendChild(pPhilo);
@@ -1580,7 +1581,7 @@ function showHelpModal() {
   h3Act.textContent = '🎨 Actions';
 
   const pPin = document.createElement('p');
-  pPin.innerHTML = `<strong>📌 Pin (Save)</strong><br>Saves a soul to your local Vault. Pinned items are protected from decay and re-broadcasted when you join.`;
+  pPin.innerHTML = `<strong>📌 Pin (Save)</strong><br>Moves a soul from the ephemeral River to your local <strong>Vault</strong> (Saved tab). Vault items are protected from decay and are quietly seeded to the network in the background to keep the culture alive.`;
 
   const pBroad = document.createElement('p');
   pBroad.style.marginTop = '10px';
