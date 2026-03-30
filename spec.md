@@ -658,3 +658,26 @@ This object bridges the internal P2P logic to the browser console or external sc
   - The P2P Network Provider now seeds hashes from *both* the River (RAM) and the Vault (IndexedDB).
   - This solves the CDN problem: Users only seed (host) content they have explicitly consented to keep (Pinned). The act of Pinning is an act of supporting the culture of the network.
 - **Benefit**: The Founder can safely maintain the "First Fire" by placing genesis images into their Vault, acting as a robust seed node without needing headless browsers or server-side caching that violates VPS terms of service.
+
+## 23. Sovereign Discovery (Trust On-Demand) (v1.8.0)
+
+### A. The Challenge of "Web of Trust"
+While PGP-style "Web of Trust" (global trust graphs) provides discovery, it inherently conflicts with the "My Computer, My Castle" (Sakoku) philosophy. Broadcasting who you trust to the entire network creates privacy risks and enables transitive trust exploits.
+
+### B. The Sovereign Solution: On-Demand Pull & Gradation UI
+To improve the user experience (UX) of discovering safe content without compromising local sovereignty, we introduced a localized, on-demand trust system:
+
+1.  **Local Trust Storage (`moli_trust_db`)**:
+    -   Users can explicitly "Trust" a specific sender (public key) via a UI button (⭐).
+    -   This state (`DIRECT_TRUST`) is saved **only** in the local IndexedDB.
+
+2.  **On-Demand Protocol (DataChannel)**:
+    -   When a user clicks "Trust", the client sends a direct, one-time `request-trust-list` message to that specific peer.
+    -   The peer responds with their *own* local `DIRECT_TRUST` list (`trust-list-response`).
+    -   The receiving client saves these keys locally as `RECOMMENDED`.
+    -   **Crucially**: This data is *never* broadcasted to the mesh.
+
+3.  **Safety Mask Gradation**:
+    -   **Unknown (Default)**: Strong blur (`blur(20px)`). Requires click to reveal.
+    -   **Recommended**: Weak blur (`blur(8px)`) with a golden visual indicator (border/shadow).
+    -   **Direct Trust**: Fully clear (`blur(0px)`).

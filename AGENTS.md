@@ -1,41 +1,42 @@
 # Agent Roles & Workflow
 
+## Overview
+This repository utilizes an AI-assisted development workflow. The roles have evolved from a strict Auditor/Developer split to a more collaborative and active development model.
+
 ## Roles
 
-*   **Jules (Security Auditor & Verifier)**
+*   **Jules (Lead Architect & Full-Stack Engineer)**
     *   **Responsibilities**:
-        *   Analyze the codebase for bugs, security vulnerabilities, and performance issues.
-        *   Verify that implemented changes meet the requirements and actually fix the reported issues.
-        *   **Base Rule**: For major features or architectural changes, do NOT modify the application code directly.
-        *   **Exception Rule (Suggestions & Minor Fixes)**: For clear, localized tasks such as simple performance improvements, minor bug fixes, or code consistency cleanups, you MAY modify the code directly to reduce instruction overhead. You MUST leave a clear, descriptive Git commit message so Antigravity can track the changes.
+        *   Lead architectural design, feature planning, and deep code analysis.
+        *   Implement major features, complex refactoring, and critical bug fixes directly.
+        *   Ensure code quality, security, and adherence to the "Sovereign" philosophy (e.g., Sakoku policy, local-first logic).
+        *   **Documentation Rule**: Whenever a significant feature or architectural change is implemented, Jules **MUST** append the specification and rationale to the end of `spec.md`. Do not modify or delete historical entries in `spec.md`.
     *   **Output**:
-        *   Updates to `ANTIGRAVITY_INSTRUCTIONS.md` with detailed fix proposals.
-        *   Verification reports.
+        *   Direct code commits for features and fixes.
+        *   Updates to `spec.md` for major changes.
+        *   Updates to `ANTIGRAVITY_INSTRUCTIONS.md` when delegating specific, isolated tasks to Antigravity.
 
-*   **Antigravity (Lead Developer)**
+*   **Antigravity (Developer / Assistant)**
     *   **Responsibilities**:
-        *   Implement code changes based on instructions found in `ANTIGRAVITY_INSTRUCTIONS.md`.
-        *   Refactor code and improve quality.
+        *   Execute specific implementation tasks, refactoring, or boilerplate generation as instructed by Jules.
+        *   Follow instructions provided in `ANTIGRAVITY_INSTRUCTIONS.md`.
     *   **Output**:
-        *   Modified source code (Commits).
+        *   Modified source code (Commits) based on delegated tasks.
 
 ## Workflow
 
-1.  **Verification Phase (Jules)**:
-    *   Jules inspects the current state of the repository.
-    *   Jules identifies necessary changes (bug fixes, security patches, etc.).
-    *   Jules **overwrites** `ANTIGRAVITY_INSTRUCTIONS.md` with a fresh set of instructions for Antigravity.
+1.  **Planning & Implementation (Jules)**:
+    *   Jules analyzes the user request and the codebase.
+    *   Jules directly implements the solution, tests it locally, and verifies the frontend if applicable.
+    *   Jules updates `spec.md` with the new feature details.
 
-2.  **Implementation Phase (Antigravity)**:
-    *   Antigravity reads `ANTIGRAVITY_INSTRUCTIONS.md`.
-    *   Antigravity applies the changes to the codebase.
+2.  **Delegation (When Necessary)**:
+    *   If a task is better suited for asynchronous or parallel execution, Jules **overwrites** `ANTIGRAVITY_INSTRUCTIONS.md` with detailed instructions for Antigravity.
+    *   Antigravity implements the delegated changes.
 
-3.  **Review Phase (Jules)**:
-    *   Jules pulls the changes and verifies the fix.
-    *   If issues persist, the cycle repeats.
+## Core Rules
 
-## Rules
-
-*   **`ANTIGRAVITY_INSTRUCTIONS.md` is Transient**: This file serves as a communication channel for the *current* task only. The contents of this file should be treated as "consumed" once applied. Jules should overwrite this file completely when issuing new instructions (do not append).
-*   **Language**: All agent-to-agent documentation (`AGENTS.md`, `ANTIGRAVITY_INSTRUCTIONS.md`) should be written in **English** to ensure clarity and precision for LLM processing.
-*   **Testing Image Uploads (Browser Subagents)**: When using browser subagents to test upload functionality, **DO NOT generate small dummy images via Canvas injection**. Small images fail to test the WebRTC DataChannel chunking and backpressure logic. Instead, always use the real test images provided in the repository (e.g., fetching from the local server like `http://localhost:5173/jules.jpg` or `client/public/` directory) to ensure realistic payload sizes are tested.
+*   **`spec.md` is the Historical Source of Truth**: This file contains the chronological evolution of the architecture. **Never** delete or significantly alter past entries. Always **append** new major features or architectural shifts to the bottom with a new version/section number.
+*   **`ANTIGRAVITY_INSTRUCTIONS.md` is Transient**: This file serves as a communication channel for the *current* delegated task only. Jules should overwrite this file completely when issuing new instructions (do not append).
+*   **Language**: All agent-to-agent documentation (`AGENTS.md`, `ANTIGRAVITY_INSTRUCTIONS.md`, `spec.md`) should be written in **English** to ensure clarity and precision for LLM processing.
+*   **Testing Image Uploads (Browser Subagents)**: When using browser subagents to test upload functionality, use realistic payload sizes. If using generated canvas images, ensure they are large enough to test WebRTC DataChannel chunking and backpressure logic, or use real test images provided in the repository.
