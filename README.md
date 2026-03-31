@@ -21,17 +21,13 @@ Moli P2P is an experiment in digital pioneering—cultivating a patch of interne
 1. **Ephemeral by Design (Serverless-ish)**
    There is no cloud storage. The server is merely a "dumb pipe" for signaling. Images exist solely in the browser memory of active peers. If everyone closes their tab, the gallery naturally vanishes.
 2. **Sovereignty & Resilience**
-   Your computer is your castle. There is no central moderation to ban you, and no central database to be compromised or scraped. You choose what to pin to your Vault and what to let decay.
+   Your computer is your castle. There is no central moderation to ban you, and no central database to be compromised or scraped. You choose what to pin and what to let decay.
 3. **Organic Network Dynamics**
-   The network ebbs and flows with human presence. Content thrives when people care enough to keep it alive by pinning it to their Vault, which acts as a Sovereign Cache to re-seed the network. It is a living exhibition rather than a static archive.
+   The network ebbs and flows with human presence. Content thrives when people care enough to keep it alive by pinning it. It is a living exhibition rather than a static archive.
 
 ---
 
 ## 📜 Changelog / Security Updates
-
-### v1.8.0 Sovereign Cache (River vs Vault)
-- **Architecture**: Separated the ephemeral "River" (50 image limit) from the persistent "Vault".
-- **Sovereign Seed**: Pinning an image moves it to the Vault and automatically seeds it to the P2P network in the background, keeping the culture alive without creating an unwitting CDN.
 
 ### v1.7.10 Sovereign Resilience (2026-02-10)
 - **Concurrency**: Implemented "Split Semaphore" architecture (3 Uploads / 3 Downloads) to ensure 100% Full Duplex capability under heavy load.

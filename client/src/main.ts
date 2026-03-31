@@ -90,18 +90,6 @@ headerRowPrimary.appendChild(identitySection);
 const headerRowSecondary = document.createElement('div');
 headerRowSecondary.className = 'header-row-secondary';
 
-// --- Tab Navigation (Gallery vs Vault) ---
-const tabGroup = document.createElement('div');
-tabGroup.className = 'tab-group';
-const galleryTabBtn = document.createElement('button');
-galleryTabBtn.className = 'tab-btn active';
-galleryTabBtn.textContent = 'River (Live)';
-const vaultTabBtn = document.createElement('button');
-vaultTabBtn.className = 'tab-btn';
-vaultTabBtn.textContent = 'Vault (Saved)';
-tabGroup.appendChild(galleryTabBtn);
-tabGroup.appendChild(vaultTabBtn);
-
 const statsGroup = document.createElement('div');
 statsGroup.className = 'stats-group';
 const bufferIndicator = document.createElement('div');
@@ -161,8 +149,6 @@ broadcastSoulBtn.textContent = '✨ Broadcast';
 
 controlsGroup.appendChild(tickerControls);
 controlsGroup.appendChild(broadcastSoulBtn);
-
-headerRowSecondary.appendChild(tabGroup);
 headerRowSecondary.appendChild(statsGroup);
 headerRowSecondary.appendChild(controlsGroup);
 
@@ -171,25 +157,6 @@ glassPanel.appendChild(headerRowSecondary);
 
 const gallery = document.createElement('div');
 gallery.id = 'gallery';
-// Vault container
-const vaultGallery = document.createElement('div');
-vaultGallery.id = 'vault-gallery';
-vaultGallery.style.display = 'none'; // hidden by default
-
-// Tab switching logic
-galleryTabBtn.addEventListener('click', () => {
-  galleryTabBtn.classList.add('active');
-  vaultTabBtn.classList.remove('active');
-  gallery.style.display = 'grid'; // Assuming it's a grid, style handles it if we just clear display
-  vaultGallery.style.display = 'none';
-});
-
-vaultTabBtn.addEventListener('click', () => {
-  vaultTabBtn.classList.add('active');
-  galleryTabBtn.classList.remove('active');
-  vaultGallery.style.display = 'grid';
-  gallery.style.display = 'none';
-});
 
 const debugContainer = document.createElement('div');
 debugContainer.id = 'debug-container';
@@ -211,7 +178,6 @@ lightbox.className = 'lightbox';
 
 appContainer.appendChild(glassPanel);
 appContainer.appendChild(gallery);
-appContainer.appendChild(vaultGallery);
 appContainer.appendChild(debugContainer);
 appContainer.appendChild(toastContainer);
 appContainer.appendChild(lightbox);
@@ -243,10 +209,6 @@ interface ImageItem {
 
 const imageStore: ImageItem[] = [];
 const imageStoreMap = new Map<string, ImageItem>();
-
-// --- Vault State ---
-const vaultStore: ImageItem[] = [];
-const vaultStoreMap = new Map<string, ImageItem>();
 const renderQueue: ImageItem[] = [];
 
 let isPaused = false;
@@ -449,12 +411,11 @@ function checkEviction() {
   if (imageStore.length <= MAX_GALLERY_ITEMS) return;
 
   // Sort once, then batch remove the oldest items until under the limit
-  // All items in imageStore are essentially "unpinned" now, since pinned ones move to vault.
-  const sorted = [...imageStore].sort((a, b) => a.timestamp - b.timestamp);
+  const unpinned = imageStore.filter(i => !i.isPinned).sort((a, b) => a.timestamp - b.timestamp);
   let evictionCount = imageStore.length - MAX_GALLERY_ITEMS;
 
-  for (let i = 0; i < sorted.length && evictionCount > 0; i++) {
-    const toRemove = sorted[i];
+  for (let i = 0; i < unpinned.length && evictionCount > 0; i++) {
+    const toRemove = unpinned[i];
     const index = imageStore.findIndex(item => item.id === toRemove.id);
 
     if (index > -1) {
@@ -630,64 +591,35 @@ async function addImageToGallery(
     const timestamp = Date.now();
 
     const container = createGalleryItem(thumbUrl, id, isLocal, isPinned, isTrusted, {
-      onPinToggle: async (isNowPinned: boolean) => {
+      onPinToggle: (isNowPinned: boolean) => {
         const item = imageStore.find(i => i.id === id);
-        if (item && isNowPinned) {
-          // 1. Save to Vault
-          await Vault.save({
-            hash: item.hash,
-            blob,
-            name: item.caption || 'Soul',
-            size: blob.size,
-            mime: blob.type,
-            timestamp: item.timestamp,
-            originalSenderId: item.originalSenderId,
-          });
-          showToast("Moved to Vault", "success");
-
-          // 2. Add to Vault Store / UI
-          await addImageToVault(
+        if (item) {
+          item.isPinned = isNowPinned;
+          if (item.isPinned) {
+            Vault.save({
+              hash: item.hash,
               blob,
-              item.isLocal,
-              item.caption,
-              item.originalSenderId,
-              item.timestamp,
-              item.hash
-          );
-
-          // 3. Remove from River (imageStore)
-          const index = imageStore.findIndex(i => i.hash === item.hash);
-          if (index > -1) {
-            if (gallery.contains(item.element)) {
-                gallery.removeChild(item.element);
-            }
-            if (typeof (item.element as any).cleanup === 'function') {
-                (item.element as any).cleanup();
-            }
-            URL.revokeObjectURL(item.url);
-            imageStoreMap.delete(item.hash);
-            imageStore.splice(index, 1);
+              name: item.caption || 'Soul',
+              size: blob.size,
+              mime: blob.type,
+              timestamp: item.timestamp,
+              originalSenderId: item.originalSenderId,
+            });
+            showToast("Pinned to Vault", "success");
+          } else {
+            Vault.remove(item.hash);
+            showToast("Unpinned", "info");
           }
 
           // Optimistic Broadcast on Pin
           network.broadcastImage(blob, item.hash, {
-            isPinned: true, // Now always true since we only move to vault on pin
+            isPinned: item.isPinned,
             name: item.caption,
             ttl: GOSSIP_TTL,
             originalSenderId: item.originalSenderId,
             signature: item.signature,
             publicKeyBase64: item.publicKeyBase64
           });
-
-          // 4. Update Lightbox button if it's open (or close it)
-          const lightboxPinBtn = lightbox.querySelector('.pin-btn') as HTMLElement;
-          if (lightboxPinBtn) {
-             lightboxPinBtn.textContent = 'Moved to Vault';
-             lightboxPinBtn.classList.add('pinned');
-             // Close Lightbox after move for better UX
-             lightbox.style.display = 'none';
-             while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
-          }
         }
       },
       onRemove: async () => {
@@ -878,134 +810,27 @@ async function initVaultAndLoad(): Promise<void> {
   const pinnedItems = await Vault.loadAll();
 
   if (pinnedItems.length > 0) {
-    console.log(`[Vault] Restoring ${pinnedItems.length} pinned souls to Vault UI...`);
+    console.log(`[Vault] Restoring ${pinnedItems.length} pinned souls...`);
+    const existingHashes = new Set(imageStore.map(i => i.hash));
 
     for (const item of pinnedItems) {
-      if (!vaultStoreMap.has(item.hash)) {
+      if (!existingHashes.has(item.hash)) {
+        // Fix: Determine isLocal based on originalSenderId vs myId
+        // If originalSenderId is missing, assume it's legacy local or we don't know (treat as local to be safe/consistent with old behavior)
+        // If originalSenderId exists and != myId, it is NOT local.
         const isLegacyOrOwn = !item.originalSenderId || item.originalSenderId === network.myId;
-        // Directly add to vaultStore instead of main gallery
-        await addImageToVault(
+
+        await addImageToGallery(
           item.blob,
-          isLegacyOrOwn,
+          isLegacyOrOwn, // isLocal
+          undefined,
+          true,
           item.name,
-          item.originalSenderId,
-          item.timestamp,
-          item.hash
-        );
+          item.originalSenderId
+        ); // Note: Assuming Vault load handles or ignores signatures for legacy
       }
     }
   }
-}
-
-async function addImageToVault(
-    blob: Blob,
-    isLocal: boolean,
-    name?: string,
-    originalSenderId?: string,
-    timestamp: number = Date.now(),
-    precomputedHash?: string
-) {
-    let hash = precomputedHash;
-    if (!hash) {
-        const hashResult = await hashBlob(blob);
-        if (!hashResult.ok) {
-             console.error(`[Vault UI] Error hashing blob: ${hashResult.error}`);
-             return;
-        }
-        hash = hashResult.value;
-    }
-
-    if (vaultStoreMap.has(hash)) return;
-
-    const health = await checkImageHealth(blob);
-    if (!health.ok) {
-        console.warn(`[Vault UI] Corrupted image: ${health.reason}`);
-        return;
-    }
-
-    // Vault UI logic needs to build the DOM element, similar to addImageToGallery
-    const id = crypto.randomUUID();
-    let url = '';
-    try {
-        const thumbnailRes = await createThumbnail(blob);
-        url = URL.createObjectURL(thumbnailRes);
-    } catch (e) {
-        console.error(`[Vault UI] Failed to create thumbnail for Vault item: ${e}`);
-        return;
-    }
-
-    // Check trust status (simplified for Vault as it's already accepted)
-    const isTrusted = originalSenderId === network.myId; // For vault, trust logic can be simpler or mirror main
-
-    const element = createGalleryItem(
-      url,
-      id,
-      isLocal,
-      true, // isPinned
-      isTrusted, // isTrusted
-      {
-        onPinToggle: async (isNowPinned: boolean) => {
-            // Unpin from Vault
-            if (!isNowPinned) {
-                await Vault.remove(hash);
-                vaultStoreMap.delete(hash);
-                const index = vaultStore.findIndex(i => i.hash === hash);
-                if (index > -1) {
-                    vaultStore.splice(index, 1);
-                }
-                if (vaultGallery.contains(element)) {
-                    vaultGallery.removeChild(element);
-                }
-                URL.revokeObjectURL(url);
-                showToast("Removed from Vault", "info");
-            }
-        },
-        onRemove: async () => {
-            // Remove locally and blacklist
-            await Vault.remove(hash);
-            vaultStoreMap.delete(hash);
-            const index = vaultStore.findIndex(i => i.hash === hash);
-            if (index > -1) {
-                vaultStore.splice(index, 1);
-            }
-            if (vaultGallery.contains(element)) {
-                vaultGallery.removeChild(element);
-            }
-            network.addToBlacklist(hash);
-            showToast("Burned & Removed from Vault", "info");
-        },
-        onImageClick: (_isBlurred: boolean) => {
-            // Note: Lightbox logic would need to be replicated or extracted.
-            // For now, Vault items are already unblurred. We can rely on the default Lightbox logic
-            // if we extract it, but for simplicity we will just let the user see it in the gallery.
-            // (A proper refactor would extract the lightbox creation from addImageToGallery)
-            console.log(`[Vault UI] Image clicked: ${hash}`);
-            showToast("Lightbox for Vault coming soon", "info");
-        },
-        onContainerClick: () => {},
-        onTrustClick: () => {}
-      }
-    );
-
-    const newItem: ImageItem = {
-        id,
-        hash,
-        url,
-        originalBlob: blob,
-        isPinned: true,
-        isLocal,
-        timestamp,
-        element,
-        caption: name,
-        originalSenderId
-    };
-
-    vaultStoreMap.set(hash, newItem);
-    vaultStore.push(newItem);
-
-    // Sort and prepend to vault gallery UI
-    vaultStore.sort((a, b) => b.timestamp - a.timestamp); // Newest first
-    vaultGallery.insertBefore(element, vaultGallery.firstChild);
 }
 
 async function processLocalUpload(blob: Blob, name: string = 'image.png'): Promise<{ success: boolean; reason?: string }> {
@@ -1091,16 +916,11 @@ const network = new P2PNetwork(
       console.log(`[Sync] Handshake with ${session.peerId}. Sending Inventory...`);
 
       // 1. Send Inventory (Anti-Entropy / Pull Enabler) - NO OPTIMISTIC PUSH (Ghost Fix)
-      // Sovereign Cache: We share hashes of BOTH the ephemeral river (imageStore) and our eternal vault (vaultStore)
-      const riverHashes = imageStore.map(i => i.hash);
-      const vaultHashes = vaultStore.map(i => i.hash);
-      const allHashes = [...new Set([...riverHashes, ...vaultHashes])];
+      const allHashes = imageStore.map(i => i.hash);
       session.sendInventory(allHashes);
     } else if (type === 'sync-request') {
       console.log(`[Sync] Received Sync Request from ${session.peerId}. Sending Inventory...`);
-      const riverHashes = imageStore.map(i => i.hash);
-      const vaultHashes = vaultStore.map(i => i.hash);
-      const allHashes = [...new Set([...riverHashes, ...vaultHashes])];
+      const allHashes = imageStore.map(i => i.hash);
       session.sendInventory(allHashes);
     }
   },
@@ -1113,10 +933,12 @@ const network = new P2PNetwork(
     releaseDownloadSlot();
   },
   (peerId: string, hashes: string[]) => { // Inventory Callback
+    // Pre-calculate existing hashes to make the lookup O(1) instead of O(N) inside the loop
+    const existingHashes = new Set(imageStore.map(i => i.hash));
+
     hashes.forEach(hash => {
       // Pull Logic: Request missing items automatically
-      // Check both river and vault
-      const weHaveIt = imageStoreMap.has(hash) || vaultStoreMap.has(hash);
+      const weHaveIt = existingHashes.has(hash);
       if (!weHaveIt && !network.isBlacklisted(hash)) {
         const session = network.sessions.get(peerId);
         if (session) {
@@ -1133,31 +955,19 @@ const network = new P2PNetwork(
     processDownloadQueue();
   },
   (session: PeerSession, hash: string) => { // Request Handler (Provider Side)
-    const item = imageStoreMap.get(hash) || vaultStoreMap.get(hash);
+    const item = imageStoreMap.get(hash);
     if (item) {
       console.log(`[Main] Peer ${session.sessionPeerId} requested ${hash.substring(0, 8)}. Sending...`);
-
-      // If served from vault, it is by definition pinned
-      const isPinned = item.isPinned || vaultStoreMap.has(hash);
-
+      // Send the original Blob instead of fetching from thumbnail URL
       try {
         session.sendImage(item.originalBlob, item.hash, {
-          isPinned: isPinned,
+          isPinned: item.isPinned,
           name: item.caption,
           ttl: GOSSIP_TTL,
           originalSenderId: item.originalSenderId,
           signature: item.signature,
           publicKeyBase64: item.publicKeyBase64
         });
-
-        // Update timestamp for Sovereign Cache LRU (if it's in the vault)
-        if (vaultStoreMap.has(hash)) {
-            // Note: Currently we don't have an LRU eviction on vault reads implemented here,
-            // but we update the memory timestamp. To persist the "last accessed" time to IndexedDB
-            // for LRU, we would need to update the Vault record here.
-            item.timestamp = Date.now();
-        }
-
       } catch (e) {
         console.error(`[Main] Failed to send requested image:`, e);
       }
@@ -1563,13 +1373,12 @@ function showHelpModal() {
   const sectionPhilo = document.createElement('div');
   sectionPhilo.className = 'help-section';
   const h3Philo = document.createElement('h3');
-  h3Philo.textContent = '🌊 The River vs 🏰 The Vault';
+  h3Philo.textContent = '⏳ Ephemeral Capacity';
   const pPhilo = document.createElement('p');
   pPhilo.innerHTML = `
-    <strong>River (Live): Max 50 Images</strong><br>
-    The River flows constantly. When new souls arrive, the oldest ones are washed away.<br>
-    <strong>Vault (Saved): Your Castle</strong><br>
-    Pinning a soul moves it to your Vault. It is saved securely in your browser and automatically seeded to the network to keep the culture alive.
+    <strong>Max Capacity: 50 Images</strong><br>
+    Your browser holds the latest 50 souls. When new ones arrive, the oldest unpinned ones are extinguished to make room.<br>
+    <em>"The fire must breathe."</em>
   `;
   sectionPhilo.appendChild(h3Philo);
   sectionPhilo.appendChild(pPhilo);
@@ -1581,7 +1390,7 @@ function showHelpModal() {
   h3Act.textContent = '🎨 Actions';
 
   const pPin = document.createElement('p');
-  pPin.innerHTML = `<strong>📌 Pin (Save)</strong><br>Moves a soul from the ephemeral River to your local <strong>Vault</strong> (Saved tab). Vault items are protected from decay and are quietly seeded to the network in the background to keep the culture alive.`;
+  pPin.innerHTML = `<strong>📌 Pin (Save)</strong><br>Saves a soul to your local Vault. Pinned items are protected from decay and re-broadcasted when you join.`;
 
   const pBroad = document.createElement('p');
   pBroad.style.marginTop = '10px';
