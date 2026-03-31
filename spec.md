@@ -641,7 +641,25 @@ This object bridges the internal P2P logic to the browser console or external sc
 - **Solution**: The Provider callback (`main.ts`) now explicitly passes `item.originalSenderId` into `session.sendImage()`.
 - **Effect**: Complete restoration of the default safety blur on all non-local images, regardless of whether they were pushed actively or pulled passively.
 
-## 22. Sovereign Discovery (Trust On-Demand) (v1.8.0)
+## 22. Sovereign Cache: River vs Vault (v1.8.0 Architecture Pivot)
+
+### A. The "Unwitting CDN" Problem
+- **Problem**: Earlier proposals for "Cooperative Caching" (e.g. allocating 1GB of IndexedDB to automatically store and re-seed all P2P images) violated the "My Computer, My Castle" (Sovereign) philosophy. Users would unwittingly use their bandwidth and disk space to host unverified, blurred, or even malicious content.
+- **Problem 2**: Pinning images in the main gallery occupied the 50-image buffer. A user who pinned 49 images would choke the "flow" of the gallery, leaving only 1 slot for new content.
+
+### B. Solution: The Vault Separation
+- **Architecture**: Separated the client UI and memory into two distinct zones:
+  1. **The River (Live)**: An ephemeral 50-image buffer (`imageStore`). It flows constantly; old images are naturally evicted. Nothing here is persisted to disk by default.
+  2. **The Vault (Saved)**: A separate UI tab (`vaultStore`) backed by `IndexedDB`.
+- **Mechanism**:
+  - When a user clicks **"Pin"**, the image is explicitly *moved* out of the River and into the Vault.
+  - This immediately frees up capacity in the 50-image River, solving the buffer choke problem.
+- **Sovereign Seed**:
+  - The P2P Network Provider now seeds hashes from *both* the River (RAM) and the Vault (IndexedDB).
+  - This solves the CDN problem: Users only seed (host) content they have explicitly consented to keep (Pinned). The act of Pinning is an act of supporting the culture of the network.
+- **Benefit**: The Founder can safely maintain the "First Fire" by placing genesis images into their Vault, acting as a robust seed node without needing headless browsers or server-side caching that violates VPS terms of service.
+
+## 23. Sovereign Discovery (Trust On-Demand) (v1.8.0)
 
 ### A. The Challenge of "Web of Trust"
 While PGP-style "Web of Trust" (global trust graphs) provides discovery, it inherently conflicts with the "My Computer, My Castle" (Sakoku) philosophy. Broadcasting who you trust to the entire network creates privacy risks and enables transitive trust exploits.

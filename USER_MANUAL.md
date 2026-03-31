@@ -15,9 +15,10 @@ You upload a photo, and it is stored on a server forever. It is indexed, analyze
 
 Moli P2P is a **Campfire**.
 The images you see exist only because someone is currently "holding" them in their browser.
--   **Ephemeral Capacity**: Your browser holds the latest **50 souls**. When new ones arrive, the oldest unpinned ones are extinguished.
+-   **The River (Live)**: The main gallery flows constantly. It holds the latest **50 souls**. When new ones arrive, the oldest ones are washed away.
+-   **The Vault (Saved)**: Pinning a soul moves it to your Vault. It is saved in your browser securely. Your Vault acts as a "Sovereign Cache", quietly seeding those images back to the network to keep the culture alive.
 -   **Presence is Storage**: The gallery lives only as long as we watch it together.
--   **Digital Natural Selection**: Good content is Pinned and survives. Noise decays.
+-   **Digital Natural Selection**: Good content is Pinned into Vaults and survives. Noise decays in the River.
 
 ---
 
@@ -43,11 +44,11 @@ You don't "upload" to a server. You **broadcast** directly to the people connect
 -   It is not saved anywhere unless someone chooses to keep it.
 -   *Think of it as telling a story around the fire.*
 
-### 📌 Pin (The Resonance)
-If you see something beautiful, click **Pin**.
--   This saves a copy to your local **Vault**.
--   You become a "Holder" of that memory.
--   When you return to the campfire later, you automatically re-broadcast your Pinned memories to new people.
+### 📌 Pin to Vault (The Sovereign Cache)
+If you see something beautiful in the Live River, click **Pin**.
+-   This moves the image out of the ephemeral River and securely into your local **Vault** tab.
+-   You become a "Holder" of that memory, and it will not be washed away by the 50-image limit.
+-   While you are connected, your Vault acts as a background seed. If another peer is missing an image you have in your Vault, you will automatically provide it to them.
 -   *You keep the fire burning.*
 
 ### 🗑️ Burn / Remove (The Rejection)
