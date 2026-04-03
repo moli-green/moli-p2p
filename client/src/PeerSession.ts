@@ -230,11 +230,14 @@ export class PeerSession {
             while (this.candidateQueue.length > 0) {
                 const currentBatch = this.candidateQueue;
                 this.candidateQueue = [];
-                for (const cand of currentBatch) {
-                    if (cand) {
-                        const iceResult = await wrapPromise(this.pc.addIceCandidate(cand));
-                        if (!iceResult.ok) return err(new Error(`Failed to add buffered candidate: ${iceResult.error}`));
-                    }
+
+                // Optimization: Parallelize addIceCandidate calls to reduce connection establishment latency
+                const results = await Promise.all(
+                    currentBatch.map(cand => cand ? wrapPromise(this.pc.addIceCandidate(cand)) : Promise.resolve(ok(undefined)))
+                );
+
+                for (const res of results) {
+                    if (!res.ok) return err(new Error(`Failed to add buffered candidate: ${res.error}`));
                 }
             }
         }
