@@ -5,7 +5,7 @@ export interface VaultItem {
     size: number;
     mime: string;
     tributeTag?: string;
-    receipt?: any;
+    receipt?: unknown;
     originalSenderId?: string;
     timestamp: number;
 }
@@ -45,7 +45,7 @@ export class Vault {
             buffer: buffer,
             blob: undefined // Do not store blob directly
         };
-        delete (storedItem as any).blob; // Ensure it's gone
+        delete (storedItem as Partial<VaultItem>).blob; // Ensure it's gone
 
         return new Promise((resolve, reject) => {
             const tx = this.db!.transaction(this.STORE_NAME, 'readwrite');
@@ -98,7 +98,7 @@ export class Vault {
         });
     }
 
-    static async updateReceipt(hash: string, receipt: any): Promise<void> {
+    static async updateReceipt(hash: string, receipt: unknown): Promise<void> {
         if (!this.db) await this.init();
         return new Promise((resolve, reject) => {
             const tx = this.db!.transaction(this.STORE_NAME, 'readwrite');

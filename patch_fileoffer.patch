@@ -1,0 +1,11 @@
+--- client/src/PeerSession.ts
++++ client/src/PeerSession.ts
+@@ -8,7 +8,7 @@
+
+
+
+-interface FileOffer {
++export interface FileOffer {
+     type: 'offer-file';
+     transferId: string;
+     name: string;
