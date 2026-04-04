@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head><title>DB Benchmark</title></head>
+<body>
+<script>
+async function runBench() {
+  const dbs = ['moli_id_db', 'moli_vault_v1', 'moli_blacklist_db'];
+
+  // Setup: Create DBs
+  for(let db of dbs) {
+    await new Promise(r => {
+      let req = indexedDB.open(db, 1);
+      req.onsuccess = (e) => { e.target.result.close(); r(); };
+    });
+  }
+
+  // Measure Sequential
+  let start = performance.now();
+  for (const dbName of dbs) {
+    await new Promise(resolve => {
+      const req = indexedDB.deleteDatabase(dbName);
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+      req.onblocked = () => resolve();
+    });
+  }
+  let end = performance.now();
+  const seqTime = end - start;
+
+  // Setup again
+  for(let db of dbs) {
+    await new Promise(r => {
+      let req = indexedDB.open(db, 1);
+      req.onsuccess = (e) => { e.target.result.close(); r(); };
+    });
+  }
+
+  // Measure Parallel
+  start = performance.now();
+  await Promise.all(dbs.map(dbName => new Promise(resolve => {
+    const req = indexedDB.deleteDatabase(dbName);
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  })));
+  end = performance.now();
+  const parTime = end - start;
+
+  // Print raw values to console
+  console.log(`__SEQ__${seqTime}__PAR__${parTime}`);
+  document.body.innerHTML = `Sequential: ${seqTime.toFixed(2)}ms<br>Parallel: ${parTime.toFixed(2)}ms`;
+}
+runBench();
+</script>
+</body>
+</html>

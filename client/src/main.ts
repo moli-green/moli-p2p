@@ -956,14 +956,15 @@ if (idBurnBtn) {
       // 2. Wipe IndexedDBs (Correct Names)
       const dbs = ['moli_id_db', 'moli_vault_v1', 'moli_blacklist_db'];
 
-      for (const dbName of dbs) {
-        await new Promise<void>(resolve => {
+      await Promise.all(dbs.map(dbName =>
+        new Promise<void>(resolve => {
           const req = indexedDB.deleteDatabase(dbName);
           req.onsuccess = () => { console.log(`Deleted ${dbName}`); resolve(); };
           req.onerror = () => { console.warn(`Failed to delete ${dbName}`); resolve(); };
           req.onblocked = () => { console.warn(`Blocked deleting ${dbName}`); resolve(); };
-        });
-      }
+        })
+      ));
+
       window.location.reload();
     };
 
