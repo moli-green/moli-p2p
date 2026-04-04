@@ -67,7 +67,7 @@ export class PeerSession {
     private currentMeta: FileMetadata | null = null;
     // Old sendQueue removed in Phase 46 Refactor
     // pullResolver removed (Phase 46)
-    private transferTimeout: any = null; // Timeout Handle
+    private transferTimeout: ReturnType<typeof setTimeout> | null = null; // Timeout Handle
 
     // ICE Buffering
     private candidateQueue: RTCIceCandidateInit[] = [];
@@ -85,7 +85,7 @@ export class PeerSession {
         private onImage: (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string, signature?: string, publicKeyBase64?: string }) => void,
         private onTransferError: (transferId: string) => void, // NEW: Error Feedback
         private network: { canReceiveFrom: (peerId: string) => boolean },
-        private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
+        private onSessionEvent?: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: unknown) => void,
         private onFileRequested?: (hash: string) => void, // NEW: Pull Request Callback
         realPeerId?: string, // Deterministic Cryptographic ID
         activeIceServers?: RTCIceServer[] // Dynamic ICE Configuration
@@ -662,7 +662,7 @@ export class PeerSession {
     }
 
     // State for Pull Timeouts (Receiver Side)
-    private pullTimeouts = new Map<string, any>();
+    private pullTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
     // NEW: Request File via Hash (Pull)
     public pullFile(transferId: string) {
