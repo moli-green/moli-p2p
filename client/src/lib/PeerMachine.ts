@@ -164,7 +164,7 @@ export const peerMachine = setup({
                 input: ({ context, event }) => {
                     return {
                         pc: context.pc,
-                        sdp: (event as any).sdp,
+                        sdp: (event as unknown as { sdp: RTCSessionDescriptionInit }).sdp,
                         type: 'offer',
                         isPolite: context.isPolite
                     };
@@ -185,7 +185,7 @@ export const peerMachine = setup({
                 input: ({ context, event }) => {
                     return {
                         pc: context.pc,
-                        sdp: (event as any).sdp,
+                        sdp: (event as unknown as { sdp: RTCSessionDescriptionInit }).sdp,
                         type: 'answer',
                         isPolite: context.isPolite
                     };

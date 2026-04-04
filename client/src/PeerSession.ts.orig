@@ -7,7 +7,7 @@ import { wrapPromise, ok, err } from './lib/Result';
 
 
 
-export interface FileOffer {
+interface FileOffer {
     type: 'offer-file';
     transferId: string;
     name: string;

@@ -1,6 +1,6 @@
 import { SignalSchema, type SignalMessage } from './types';
 // Unused Vault import removed
-import { PeerSession } from './PeerSession';
+import { PeerSession, type FileOffer } from './PeerSession';
 import { PeerIdentity } from './PeerIdentity';
 import { v4 as uuidv4 } from 'uuid';
 import { MAX_PEERS, GOSSIP_TTL, CACHE_SIZE } from './constants';
@@ -20,11 +20,11 @@ export class P2PNetwork {
 
     constructor(
         private onImage: (blob: Blob, options: { peerId: string, isPinned?: boolean, name?: string, ttl?: number, originalSenderId?: string, signature?: string, publicKeyBase64?: string }) => void,
-        private onEvent: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) => void,
+        private onEvent: (type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: unknown) => void,
         private onPeerCountChange: (count: number) => void,
         private onTransferError: (session: PeerSession, transferId: string) => void,
         private onInventory: (peerId: string, hashes: string[]) => void,
-        private onOfferFile: (session: PeerSession, data: any) => void,
+        private onOfferFile: (session: PeerSession, data: FileOffer) => void,
         private onFileRequested: (session: PeerSession, hash: string) => void,
     ) {
         this.identity = new PeerIdentity();
@@ -187,11 +187,11 @@ export class P2PNetwork {
                 await this.connect();
                 console.log('[P2P] Initialization Successful');
                 return;
-            } catch (e: any) {
+            } catch (e: unknown) {
                 attempt++;
                 if (attempt >= maxAttempts) throw e;
                 const delay = 1000 * attempt;
-                console.warn(`[P2P] Connection failed: ${e.message || e}. Retrying in ${delay / 1000}s...`);
+                console.warn(`[P2P] Connection failed: ${e instanceof Error ? e.message : String(e)}. Retrying in ${delay / 1000}s...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
@@ -423,7 +423,7 @@ export class P2PNetwork {
         return sentCount;
     }
 
-    private handleSessionEvent(type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: any) {
+    private handleSessionEvent(type: 'connected' | 'sync-request' | 'inventory' | 'offer-file' | 'verified-image' | 'burn', session: PeerSession, data?: unknown) {
         if (type === 'connected') {
             this.onPeerCountChange?.(this.connectedPeerCount);
             console.log(`[Sync] DataChannel connected with ${session.sessionPeerId} (Peer: ${session.peerId}), requesting sync...`);
@@ -436,10 +436,10 @@ export class P2PNetwork {
             this.onInventory?.(session.peerId, hashes);
         } else if (type === 'offer-file') {
             this.onEvent?.('offer-file', session, data);
-            this.onOfferFile?.(session, data); // Specific Callback
+            this.onOfferFile?.(session, data as FileOffer); // Specific Callback
         } else if (type === 'burn') {
             // POLICY: Sakoku (Local Only)
-            console.log(`[Network] Burn event for ${data.hash} handled locally. NOT broadcasting.`);
+            console.log(`[Network] Burn event for ${(data as any).hash} handled locally. NOT broadcasting.`);
         }
     }
 

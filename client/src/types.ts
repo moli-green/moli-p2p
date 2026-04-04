@@ -5,9 +5,9 @@ export const SignalSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('join'), senderId: z.string(), peerId: z.string(), targetId: z.string().optional() }),
 
     // Targeted Signaling: targetId is MANDATORY
-    z.object({ type: z.literal('offer'), senderId: z.string(), targetId: z.string(), sdp: z.any() }),
-    z.object({ type: z.literal('answer'), senderId: z.string(), targetId: z.string(), sdp: z.any() }),
-    z.object({ type: z.literal('candidate'), senderId: z.string(), targetId: z.string(), candidate: z.any() }),
+    z.object({ type: z.literal('offer'), senderId: z.string(), targetId: z.string(), sdp: z.custom<RTCSessionDescriptionInit>() }),
+    z.object({ type: z.literal('answer'), senderId: z.string(), targetId: z.string(), sdp: z.custom<RTCSessionDescriptionInit>() }),
+    z.object({ type: z.literal('candidate'), senderId: z.string(), targetId: z.string(), candidate: z.custom<RTCIceCandidateInit>() }),
 
     // Leave: broadcast from server
     z.object({ type: z.literal('leave'), senderId: z.string() }),
@@ -26,7 +26,7 @@ export interface FileMeta {
     identityCreatedAt?: number;
     isPinned?: boolean;
     tributeTag?: string;
-    receipt?: any; // Signed Honorable Receipt
+    receipt?: unknown; // Signed Honorable Receipt
 }
 
 export interface BurnSignal {

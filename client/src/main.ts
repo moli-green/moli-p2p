@@ -1,6 +1,6 @@
 import './style.css';
 import { P2PNetwork } from './P2PNetwork';
-import { PeerSession } from './PeerSession';
+import { PeerSession, type FileOffer } from './PeerSession';
 import * as jdenticon from 'jdenticon';
 import { Vault } from './lib/vault';
 import {
@@ -421,8 +421,9 @@ function checkEviction() {
       if (gallery.contains(toRemove.element)) {
         gallery.removeChild(toRemove.element);
       }
-      if (typeof (toRemove.element as any).cleanup === 'function') {
-        (toRemove.element as any).cleanup();
+      const elWithCleanup = toRemove.element as HTMLElement & { cleanup?: () => void };
+      if (typeof elWithCleanup.cleanup === 'function') {
+        elWithCleanup.cleanup();
       }
       URL.revokeObjectURL(toRemove.url);
       imageStoreMap.delete(toRemove.hash);
@@ -441,8 +442,9 @@ function removeImageFromGallery(hash: string) {
       if (gallery.contains(item.element)) {
         gallery.removeChild(item.element);
       }
-      if (typeof (item.element as any).cleanup === 'function') {
-        (item.element as any).cleanup();
+      const elWithCleanup = item.element as HTMLElement & { cleanup?: () => void };
+      if (typeof elWithCleanup.cleanup === 'function') {
+        elWithCleanup.cleanup();
       }
       URL.revokeObjectURL(item.url);
       imageStore.splice(i, 1);
@@ -455,7 +457,7 @@ function removeImageFromGallery(hash: string) {
 
 const MAX_CONCURRENT_DOWNLOADS = 3;
 let activeDownloadCount = 0;
-const downloadQueue: { session: PeerSession; transferId: string; meta: any }[] = [];
+const downloadQueue: { session: PeerSession; transferId: string; meta: FileOffer }[] = [];
 
 function processDownloadQueue() {
   console.log(`[Scheduler] ProcessQueue: Active=${activeDownloadCount}, Queue=${downloadQueue.length}`);
@@ -483,7 +485,7 @@ interface UploadTask {
   blob: Blob;
   name: string;
   resolve: (value: { success: boolean; reason?: string }) => void;
-  reject: (reason?: any) => void;
+  reject: (reason?: unknown) => void;
 }
 const uploadQueue: UploadTask[] = [];
 
@@ -838,7 +840,7 @@ const network = new P2PNetwork(
       }
     });
   },
-  (session: PeerSession, data: any) => { // Offer File Callback
+  (session: PeerSession, data: FileOffer) => { // Offer File Callback
     // If trusted, we might prioritize download? For now just track.
     console.log(`[Main] Queueing download ${data.name} from ${session.peerId}`);
     downloadQueue.push({ session, transferId: data.transferId, meta: data });
@@ -1082,9 +1084,9 @@ function checkMobileWarning(): Promise<void> {
     myIdIcon.innerHTML = jdenticon.toSvg(network.myId, 20);
     showToast(`Sovereign Soul Ready: ${network.myId.substring(0, 8)} `, 'success');
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("FATAL INITIALIZATION ERROR:", err);
-    showToast(`Startup Failed: ${err.message || err}. Try Burning Identity.`, 'error');
+    showToast(`Startup Failed: ${err instanceof Error ? err.message : String(err)}. Try Burning Identity.`, 'error');
   }
 })();
 
@@ -1136,7 +1138,8 @@ async function showUploadModal() {
   h2.style.background = 'linear-gradient(to right, #fff, #646cff)';
   h2.style.webkitBackgroundClip = 'text';
   h2.style.backgroundClip = 'text';
-  (h2.style as any).webkitTextFillColor = 'transparent';
+  // @ts-ignore
+  h2.style.webkitTextFillColor = 'transparent';
   h2.textContent = 'Broadcast Your Soul';
 
   const dropZone = document.createElement('div');
