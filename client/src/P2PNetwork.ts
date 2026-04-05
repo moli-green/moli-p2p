@@ -1,5 +1,4 @@
 import { SignalSchema, type SignalMessage } from './types';
-// Unused Vault import removed
 import { PeerSession, type FileOffer } from './PeerSession';
 import { PeerIdentity } from './PeerIdentity';
 import { v4 as uuidv4 } from 'uuid';
