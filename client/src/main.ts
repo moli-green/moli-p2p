@@ -802,7 +802,7 @@ const network = new P2PNetwork(
       options.publicKeyBase64
     );
   },
-  (type, session, _data) => {
+  (type, session) => {
     // Generic Event Handler (Sync Logic)
     if (type === 'connected') {
       console.log(`[Sync] Handshake with ${session.peerId}. Sending Inventory...`);
