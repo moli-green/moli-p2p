@@ -5,7 +5,6 @@ export interface VaultItem {
     size: number;
     mime: string;
     tributeTag?: string;
-    receipt?: unknown;
     originalSenderId?: string;
     timestamp: number;
 }
@@ -98,30 +97,6 @@ export class Vault {
         });
     }
 
-    static async updateReceipt(hash: string, receipt: unknown): Promise<void> {
-        if (!this.db) await this.init();
-        return new Promise((resolve, reject) => {
-            const tx = this.db!.transaction(this.STORE_NAME, 'readwrite');
-            const store = tx.objectStore(this.STORE_NAME);
-
-            const getReq = store.get(hash);
-            getReq.onsuccess = () => {
-                const data = getReq.result;
-                if (!data) {
-                    console.warn(`[Vault] Cannot update receipt, item not found: ${hash.slice(0, 8)}`);
-                    resolve();
-                    return;
-                }
-                data.receipt = receipt;
-                const putReq = store.put(data);
-                putReq.onsuccess = () => {
-                    console.log(`[Vault] Updated receipt for: ${hash.slice(0, 8)}`);
-                    resolve();
-                };
-            };
-            getReq.onerror = () => reject(getReq.error);
-        });
-    }
     static close(): void {
         if (this.db) {
             this.db.close();
