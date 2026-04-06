@@ -135,13 +135,10 @@ async fn ws_handler(
 
     // SECURITY: Origin Validation (Optional)
     if let Ok(allowed_origin) = std::env::var("ALLOWED_ORIGIN") {
-        if let Some(origin) = headers.get("origin") {
-            if let Ok(origin_str) = origin.to_str() {
-                if origin_str != allowed_origin {
-                    println!("Origin mismatch: {} != {}", origin_str, allowed_origin);
-                    return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
-                }
-            }
+        let origin_str = headers.get("origin").and_then(|v| v.to_str().ok());
+        if origin_str != Some(allowed_origin.as_str()) {
+            println!("Origin mismatch or missing: {:?} != {}", origin_str, allowed_origin);
+            return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
         }
     }
 
