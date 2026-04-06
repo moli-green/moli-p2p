@@ -26,7 +26,6 @@ export interface FileMeta {
     identityCreatedAt?: number;
     isPinned?: boolean;
     tributeTag?: string;
-    receipt?: unknown; // Signed Honorable Receipt
 }
 
 export interface BurnSignal {
