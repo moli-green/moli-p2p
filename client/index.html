@@ -1,39 +1,58 @@
 <!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Moli P2P</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" />
+  </head>
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Moli P2P</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet">
-</head>
+  <body>
+    <div id="app"></div>
+    <div id="empty-state" class="empty-state">
+      <div class="pulse-ring"></div>
+      <div class="pulse-ring delay-1"></div>
+      <div class="pulse-ring delay-2"></div>
+      <p class="empty-message">Listening for signals...</p>
+    </div>
+    <div
+      id="global-error"
+      style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background: red;
+        color: white;
+        display: none;
+        z-index: 9999;
+        padding: 20px;
+      "
+    ></div>
+    <script>
+      function addErrorSafe(title, details) {
+        var div = document.getElementById("global-error");
+        div.style.display = "block";
+        var titleEl = document.createElement("h3");
+        titleEl.textContent = title;
+        var detailsEl = document.createElement("div");
+        detailsEl.textContent = details;
+        div.appendChild(titleEl);
+        div.appendChild(detailsEl);
+        div.appendChild(document.createElement("br"));
+      }
 
-<body>
-  <div id="app"></div>
-  <div id="empty-state" class="empty-state">
-    <div class="pulse-ring"></div>
-    <div class="pulse-ring delay-1"></div>
-    <div class="pulse-ring delay-2"></div>
-    <p class="empty-message">Listening for signals...</p>
-  </div>
-  <div id="global-error"
-    style="position:fixed; top:0; left:0; width:100%; background:red; color:white; display:none; z-index:9999; padding:20px;">
-  </div>
-  <script>
-    window.onerror = function (msg, url, line, col, error) {
-      var div = document.getElementById('global-error');
-      div.style.display = 'block';
-      div.innerHTML = '<h3>Startup Error</h3>' + msg + '<br>' + url + ':' + line + ':' + col;
-    };
-    window.addEventListener('unhandledrejection', function (event) {
-      var div = document.getElementById('global-error');
-      div.style.display = 'block';
-      div.innerHTML += '<br><h3>Promise Rejection</h3>' + event.reason;
-    });
-  </script>
-  <script type="module" src="/src/main.ts"></script>
-</body>
+      window.onerror = function (msg, url, line, col, error) {
+        var details = msg + " (" + url + ":" + line + ":" + col + ")";
+        addErrorSafe("Startup Error", details);
+      };
 
+      window.addEventListener("unhandledrejection", function (event) {
+        addErrorSafe("Promise Rejection", String(event.reason));
+      });
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>
