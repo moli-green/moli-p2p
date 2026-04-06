@@ -512,7 +512,7 @@ export class PeerSession {
         let publicKeyBase64 = options.publicKeyBase64;
 
         // If we are the original sender, and we don't have a signature yet, sign it
-        if ((options.originalSenderId === this.myId || options.originalSenderId === undefined) && !signature) {
+        if ((options.originalSenderId === this.identity.peerId || options.originalSenderId === undefined) && !signature) {
              try {
                   signature = await this.identity.signMetadata(fileName, totalSize, hash, options.isPinned || false);
                   if (this.identity.publicKeySpki) {

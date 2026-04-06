@@ -708,10 +708,10 @@ async function initVaultAndLoad(): Promise<void> {
 
     for (const item of pinnedItems) {
       if (!existingHashes.has(item.hash)) {
-        // Fix: Determine isLocal based on originalSenderId vs myId
+        // Fix: Determine isLocal based on originalSenderId vs persistent identity peerId
         // If originalSenderId is missing, assume it's legacy local or we don't know (treat as local to be safe/consistent with old behavior)
-        // If originalSenderId exists and != myId, it is NOT local.
-        const isLegacyOrOwn = !item.originalSenderId || item.originalSenderId === network.myId;
+        // If originalSenderId exists and != identity.peerId, it is NOT local.
+        const isLegacyOrOwn = !item.originalSenderId || item.originalSenderId === network.identity.peerId;
 
         await addImageToGallery(
           item.blob,
@@ -761,18 +761,18 @@ async function performLocalUpload(file: Blob, _name: string = 'image.png'): Prom
     size: file.size,
     mime: file.type,
     timestamp: Date.now(),
-    originalSenderId: network.myId,
+    originalSenderId: network.identity.peerId,
   });
 
   console.log(`[Vault] Auto-pinned original upload: ${hash.slice(0, 8)} `);
-  await addImageToGallery(file, true, undefined, true, _name, network.myId); // isPinned = true
+  await addImageToGallery(file, true, undefined, true, _name, network.identity.peerId); // isPinned = true
 
   shareInventory();
   const sentCount = network.broadcastImage(file, hash, {
     isPinned: false,
     name: _name,
     ttl: GOSSIP_TTL,
-    originalSenderId: network.myId
+    originalSenderId: network.identity.peerId
   });
 
   if (sentCount > 0) {
@@ -791,7 +791,7 @@ const network = new P2PNetwork(
     // Sovereign Safety: Incoming images are untrusted (unpinned) by default.
     // Ignored sender's isPinned status to prevent "Ghost Pinning" on receiver.
     // If originalSenderId is missing (legacy remote), it MUST be treated as remote (!isLocal).
-    const isLocal = options.originalSenderId === network.myId;
+    const isLocal = options.originalSenderId === network.identity.peerId;
     await addImageToGallery(
       blob,
       isLocal,
