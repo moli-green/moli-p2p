@@ -24,7 +24,9 @@ export function createGalleryItem(
         onRemove: () => void,
         onImageClick: (isBlurred: boolean) => void,
         onContainerClick: (isBlurred: boolean) => void,
-    }
+    },
+    _caption?: string,
+    senderId?: string
 ): HTMLElement {
     const container = document.createElement('div');
     container.className = 'gallery-item';
@@ -54,14 +56,35 @@ export function createGalleryItem(
     const overlay = document.createElement('div');
     overlay.className = 'card-overlay';
 
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.width = '100%';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'flex-start';
+    header.style.marginBottom = 'auto';
+
     const label = document.createElement('div');
     label.style.fontSize = '12px';
-    label.style.marginBottom = 'auto';
-    label.style.alignSelf = 'flex-start';
     label.style.background = 'rgba(0,0,0,0.5)';
     label.style.padding = '2px 6px';
     label.style.borderRadius = '4px';
     label.textContent = isLocal ? 'Original Soul' : 'Shared Soul';
+
+    header.appendChild(label);
+
+    if (senderId) {
+        import('jdenticon').then(jdenticon => {
+            const senderIcon = document.createElement('div');
+            senderIcon.innerHTML = jdenticon.toSvg(senderId, 20);
+            senderIcon.style.background = 'rgba(0,0,0,0.5)';
+            senderIcon.style.borderRadius = '4px';
+            senderIcon.style.display = 'flex';
+            senderIcon.style.alignItems = 'center';
+            senderIcon.style.justifyContent = 'center';
+            senderIcon.title = `Source ID: ${senderId.substring(0, 8)}`;
+            header.appendChild(senderIcon);
+        }).catch(() => {});
+    }
 
     const actionRow = document.createElement('div');
     actionRow.className = 'action-row';
@@ -108,7 +131,7 @@ export function createGalleryItem(
     actionRow.appendChild(pinBtn);
     actionRow.appendChild(rightActions);
 
-    overlay.appendChild(label);
+    overlay.appendChild(header);
     overlay.appendChild(actionRow);
 
     container.appendChild(img);
