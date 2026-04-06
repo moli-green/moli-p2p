@@ -182,12 +182,14 @@ appContainer.appendChild(toastContainer);
 appContainer.appendChild(lightbox);
 app.appendChild(appContainer);
 
-// UI Event Listeners
-debugHeader.onclick = () => debugContainer.classList.toggle('collapsed');
-lightbox.onclick = () => {
+function closeLightbox() {
   lightbox.style.display = 'none';
   while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
-};
+}
+
+// UI Event Listeners
+debugHeader.onclick = () => debugContainer.classList.toggle('collapsed');
+lightbox.onclick = closeLightbox;
 
 // --- 2. Global State & Interfaces ---
 
@@ -658,8 +660,7 @@ async function addImageToGallery(
           // Fix: Prevent memory leak from nested closures
           lightbox.onclick = () => {
              URL.revokeObjectURL(originalUrl);
-             lightbox.style.display = 'none';
-             while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+             closeLightbox();
           };
 
           lightbox.appendChild(lbImg);
@@ -924,10 +925,7 @@ if (idBurnBtn) {
     cancelBtn.id = 'cancel-burn';
     cancelBtn.className = 'cancel-btn';
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.onclick = () => {
-      lightbox.style.display = 'none';
-      while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
-    };
+    cancelBtn.onclick = closeLightbox;
 
     const confirmBtn = document.createElement('button');
     confirmBtn.id = 'confirm-burn';
@@ -1194,10 +1192,7 @@ async function showUploadModal() {
 
   let selectedFile: File | null = null;
 
-  cancelBtn.onclick = () => {
-    lightbox.style.display = 'none';
-    while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
-  };
+  cancelBtn.onclick = closeLightbox;
 
   dropZone.onclick = () => fileInput.click();
   dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
@@ -1236,8 +1231,7 @@ async function showUploadModal() {
     const result = await processLocalUpload(selectedFile, selectedFile.name);
 
     if (result.success) {
-      lightbox.style.display = 'none';
-      while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+      closeLightbox();
       selectedFile = null;
     } else {
       broadcastBtn.disabled = false;
@@ -1321,10 +1315,7 @@ function showHelpModal() {
   closeBtn.style.width = '100%';
   closeBtn.style.marginTop = '2rem';
   closeBtn.textContent = 'Close Manual';
-  closeBtn.onclick = () => {
-    lightbox.style.display = 'none';
-    while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
-  };
+  closeBtn.onclick = closeLightbox;
 
   // Section 4: Disclaimer (Deployment Requirements)
   const sectionDisclaimer = document.createElement('div');
@@ -1364,9 +1355,7 @@ function showHelpModal() {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (lightbox.style.display === 'flex') {
-      lightbox.style.display = 'none';
-      // Clear content
-      while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+      closeLightbox();
     }
   }
 });
