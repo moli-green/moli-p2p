@@ -585,6 +585,9 @@ async function addImageToGallery(
     const thumbUrl = URL.createObjectURL(thumbBlob);
     const timestamp = Date.now();
 
+    // Use originalSenderId if available, fallback to remotePeerId (which might be the relaying peer's ephemeral ID)
+    const displaySenderId = originalSenderId || remotePeerId;
+
     const container = createGalleryItem(thumbUrl, id, isLocal, isPinned, {
       onPinToggle: (isNowPinned) => {
         const item = imageStore.find(i => i.id === id);
@@ -665,7 +668,7 @@ async function addImageToGallery(
 
           lightbox.appendChild(lbImg);
       }
-    });
+    }, name, displaySenderId);
 
     // Store Item
     const newItem: ImageItem = {
@@ -1076,11 +1079,12 @@ function checkMobileWarning(): Promise<void> {
 
     updateEmptyState();
 
-    myIdSpan.textContent = network.myId;
-    myIdSpan.title = `My Identity: ${network.myId} `;
-    myIdSpan.style.color = getPeerColor(network.myId);
-    myIdIcon.innerHTML = jdenticon.toSvg(network.myId, 20);
-    showToast(`Sovereign Soul Ready: ${network.myId.substring(0, 8)} `, 'success');
+    const displayId = network.identity.peerId || network.myId;
+    myIdSpan.textContent = displayId;
+    myIdSpan.title = `My Identity: ${displayId} `;
+    myIdSpan.style.color = getPeerColor(displayId);
+    myIdIcon.innerHTML = jdenticon.toSvg(displayId, 20);
+    showToast(`Sovereign Soul Ready: ${displayId.substring(0, 8)} `, 'success');
 
   } catch (err: unknown) {
     console.error("FATAL INITIALIZATION ERROR:", err);
