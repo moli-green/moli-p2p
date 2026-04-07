@@ -5,7 +5,7 @@ use axum::{
     Router,
     http::StatusCode,
 };
-use std::{net::{SocketAddr, IpAddr}, sync::{Arc, RwLock as StdRwLock, atomic::{AtomicUsize, Ordering}}, collections::HashMap};
+use std::{net::{SocketAddr, IpAddr}, sync::{Arc, RwLock as StdRwLock, atomic::{AtomicUsize, Ordering}}, collections::HashMap, time::Instant};
 use tokio::sync::{broadcast, RwLock as TokioRwLock};
 use tower_http::services::ServeDir;
 use uuid::Uuid;
@@ -20,6 +20,8 @@ const MAX_GLOBAL_CONNECTIONS: usize = 1000; // Circuit Breaker
 const TURN_TTL: u64 = 3600; // 1 Hour
 const MAX_CONNS_PER_IP: usize = 10;
 const MAX_MSG_SIZE: usize = 16 * 1024; // 16KB
+const MAX_ICE_REQS_PER_IP: usize = 10; // Simple rate limit for ICE
+const ICE_RATE_LIMIT_WINDOW: u64 = 60; // 60 seconds
 
 struct BroadcastMsg {
     sender_id: String,
@@ -37,6 +39,7 @@ struct AppState {
     rooms: Arc<TokioRwLock<HashMap<String, Room>>>,
     conn_count: Arc<AtomicUsize>,
     ip_counts: Arc<StdRwLock<HashMap<IpAddr, usize>>>,
+    ice_req_counts: Arc<StdRwLock<HashMap<IpAddr, (usize, Instant)>>>,
 }
 
 struct ConnectionGuard {
@@ -85,6 +88,7 @@ async fn main() {
         rooms: Arc::new(TokioRwLock::new(HashMap::new())),
         conn_count: Arc::new(AtomicUsize::new(0)),
         ip_counts: Arc::new(StdRwLock::new(HashMap::new())),
+        ice_req_counts: Arc::new(StdRwLock::new(HashMap::new())),
     };
 
     let app = Router::new()
@@ -99,7 +103,70 @@ async fn main() {
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
 }
 
-async fn get_ice_config() -> axum::Json<IceConfig> {
+async fn get_ice_config(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let ip = addr.ip();
+
+    // SECURITY: Origin Validation
+    if let Ok(allowed_origin) = std::env::var("ALLOWED_ORIGIN") {
+        let origin_str = headers.get("origin").and_then(|v| v.to_str().ok());
+        let referer_str = headers.get("referer").and_then(|v| v.to_str().ok());
+
+        if let Some(origin) = origin_str {
+            // If Origin is present, it must match exactly
+            if origin != allowed_origin.as_str() {
+                println!("ICE Config Origin mismatch: {:?} != {}", origin, allowed_origin);
+                return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
+            }
+        } else if let Some(referer) = referer_str {
+            // Fallback to Referer if Origin is omitted
+            // Must be exact match or have a trailing slash to prevent prefix bypass (e.g., moli-green.is.attacker.com)
+            let allowed_with_slash = format!("{}/", allowed_origin);
+            if referer != allowed_origin.as_str() && !referer.starts_with(&allowed_with_slash) {
+                println!("ICE Config Referer mismatch: {:?} != {}", referer, allowed_origin);
+                return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
+            }
+        } else {
+            // Both are missing
+            println!("ICE Config Origin and Referer are both missing.");
+            return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
+        }
+    }
+
+    // SECURITY: IP Rate Limiting for ICE
+    {
+        match state.ice_req_counts.write() {
+            Ok(mut counts) => {
+                let now = Instant::now();
+
+                // Periodically prune stale entries to prevent memory leak (DoS protection)
+                // We prune roughly when map gets large to save iteration overhead, or just do it inline
+                if counts.len() > 1000 {
+                    counts.retain(|_, (_, timestamp)| now.duration_since(*timestamp).as_secs() <= ICE_RATE_LIMIT_WINDOW);
+                }
+
+                let entry = counts.entry(ip).or_insert((0, now));
+
+                // Reset if window has passed
+                if now.duration_since(entry.1).as_secs() > ICE_RATE_LIMIT_WINDOW {
+                    entry.0 = 0;
+                    entry.1 = now;
+                }
+
+                if entry.0 >= MAX_ICE_REQS_PER_IP {
+                    println!("ICE Rate Limit Reached for IP: {}", ip);
+                    return (StatusCode::TOO_MANY_REQUESTS, "Rate Limit Exceeded").into_response();
+                }
+
+                entry.0 += 1;
+            }
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Lock Poisoned").into_response(),
+        }
+    }
+
     let secret = std::env::var("TURN_SECRET").expect("TURN_SECRET must be set");
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + TURN_TTL;
     let username = format!("{}:moli", timestamp);
@@ -122,7 +189,7 @@ async fn get_ice_config() -> axum::Json<IceConfig> {
                 credential: "".to_string(),
             }
         ]
-    })
+    }).into_response()
 }
 
 async fn ws_handler(
