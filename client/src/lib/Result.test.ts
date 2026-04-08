@@ -36,7 +36,7 @@ describe("wrapPromise", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBe(thrownValue);
+      expect(result.error as any).toBe(thrownValue);
     }
   });
 });
