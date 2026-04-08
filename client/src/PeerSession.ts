@@ -65,8 +65,6 @@ export class PeerSession {
     private receivedBuffers: ArrayBuffer[] = [];
     private receivedSize = 0;
     private currentMeta: FileMetadata | null = null;
-    // Old sendQueue removed in Phase 46 Refactor
-    // pullResolver removed (Phase 46)
     private transferTimeout: ReturnType<typeof setTimeout> | null = null; // Timeout Handle
 
     // ICE Buffering
