@@ -136,11 +136,15 @@ server {
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
+        proxy_set_header Origin \$http_origin;
+        proxy_set_header Referer \$http_referer;
     }
 
     location /api/ice-config {
         proxy_pass http://localhost:9090/api/ice-config;
         proxy_set_header Host \$host;
+        proxy_set_header Origin \$http_origin;
+        proxy_set_header Referer \$http_referer;
     }
 }
 EOF
