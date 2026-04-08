@@ -11,6 +11,7 @@ echo "Building server..."
 cd server
 cargo build --release > /dev/null 2>&1
 export TURN_SECRET="dummy_secret_for_test"
+export ALLOWED_ORIGIN="http://localhost:8080"
 echo "Starting server..."
 # kill any existing server
 kill -9 $(lsof -t -i:9090) 2>/dev/null || true
