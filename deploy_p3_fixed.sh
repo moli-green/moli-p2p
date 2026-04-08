@@ -100,6 +100,13 @@ EOF
         sudo sed -i "s|Environment=RUST_LOG=info|Environment=RUST_LOG=info\nEnvironment=TURN_SECRET=$TURN_SECRET|" /etc/systemd/system/moli-p2p.service
         sudo systemctl daemon-reload
     fi
+
+    # Check if ALLOWED_ORIGIN is already in service
+    if ! grep -q "ALLOWED_ORIGIN" /etc/systemd/system/moli-p2p.service; then
+        echo ">>> Adding ALLOWED_ORIGIN to moli-p2p.service..."
+        sudo sed -i "s|Environment=RUST_LOG=info|Environment=RUST_LOG=info\nEnvironment=ALLOWED_ORIGIN=https://$DOMAIN|" /etc/systemd/system/moli-p2p.service
+        sudo systemctl daemon-reload
+    fi
      
     # Remove Client Injection (No longer needed, Client fetches from API)
     # echo ">>> Injecting Production Config..." -> SKIPPED
