@@ -25,8 +25,7 @@ export function createGalleryItem(
         onImageClick: (isBlurred: boolean) => void,
         onContainerClick: (isBlurred: boolean) => void,
     },
-    _caption?: string,
-    senderId?: string
+    _caption?: string
 ): HTMLElement {
     const container = document.createElement('div');
     container.className = 'gallery-item';
@@ -71,35 +70,6 @@ export function createGalleryItem(
     label.textContent = isLocal ? 'Original Soul' : 'Shared Soul';
 
     header.appendChild(label);
-
-    if (senderId) {
-        import('jdenticon').then(jdenticon => {
-            const senderIcon = document.createElement('div');
-
-            // Convert senderId to hex to guarantee it's purely alphanumeric
-            // This prevents XSS attacks via jdenticon.toSvg when using DOMParser or innerHTML
-            const safeId = Array.from(new TextEncoder().encode(senderId))
-                .map(b => b.toString(16).padStart(2, '0'))
-                .join('');
-
-            const svgString = jdenticon.toSvg(safeId, 20);
-            const parser = new DOMParser();
-            const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-
-            // Ensure we append the svg root element, not the entire document
-            if (svgDoc.documentElement.tagName.toLowerCase() === 'svg') {
-                senderIcon.appendChild(svgDoc.documentElement);
-            }
-
-            senderIcon.style.background = 'rgba(0,0,0,0.5)';
-            senderIcon.style.borderRadius = '4px';
-            senderIcon.style.display = 'flex';
-            senderIcon.style.alignItems = 'center';
-            senderIcon.style.justifyContent = 'center';
-            senderIcon.title = `Source ID: ${senderId.substring(0, 8)}`;
-            header.appendChild(senderIcon);
-        }).catch(() => {});
-    }
 
     const actionRow = document.createElement('div');
     actionRow.className = 'action-row';
