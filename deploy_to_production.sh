@@ -13,7 +13,7 @@ echo ">>> 🚀 Starting Deployment to $TARGET_HOST..."
 echo ">>> 📂 Syncing files..."
 # We explicitly exclude node_modules and .git to save time and bandwidth
 # We also exclude client/dist because it will be built on the server
-rsync -avz \
+rsync -avz --delete \
     --exclude 'node_modules' \
     --exclude '.git' \
     --exclude '.DS_Store' \
