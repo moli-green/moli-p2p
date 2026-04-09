@@ -9,8 +9,7 @@
       "DOM.Iterable"
     ],
     "types": [
-      "vite/client",
-      "bun-types"
+      "vite/client"
     ],
     "skipLibCheck": true,
     /* Bundler mode */

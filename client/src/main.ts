@@ -1,7 +1,6 @@
 import './style.css';
 import { P2PNetwork } from './P2PNetwork';
 import { PeerSession, type FileOffer } from './PeerSession';
-import * as jdenticon from 'jdenticon';
 import { Vault } from './lib/vault';
 import {
   RENDER_INTERVAL_MS,
@@ -62,9 +61,6 @@ titleGroup.appendChild(pSubtitle);
 
 const identitySection = document.createElement('div');
 identitySection.className = 'identity-section';
-const myIdIcon = document.createElement('span');
-myIdIcon.id = 'my-id-icon';
-myIdIcon.className = 'id-icon';
 const myIdSpan = document.createElement('span');
 myIdSpan.id = 'my-id';
 myIdSpan.className = 'id-text';
@@ -78,7 +74,6 @@ helpBtn.id = 'help-btn';
 helpBtn.className = 'help-btn';
 helpBtn.title = 'Manual / Help';
 helpBtn.textContent = '?';
-identitySection.appendChild(myIdIcon);
 identitySection.appendChild(myIdSpan);
 identitySection.appendChild(idBurnBtn);
 identitySection.appendChild(helpBtn);
@@ -1080,8 +1075,7 @@ function checkMobileWarning(): Promise<void> {
     myIdSpan.textContent = displayId;
     myIdSpan.title = `My Identity: ${displayId} `;
     myIdSpan.style.color = getPeerColor(displayId);
-    myIdIcon.innerHTML = jdenticon.toSvg(displayId, 20);
-    showToast(`Sovereign Soul Ready: ${displayId.substring(0, 8)} `, 'success');
+        showToast(`Sovereign Soul Ready: ${displayId.substring(0, 8)} `, 'success');
 
   } catch (err: unknown) {
     console.error("FATAL INITIALIZATION ERROR:", err);
@@ -1209,6 +1203,10 @@ async function showUploadModal() {
   };
 
   function handleFileSelection(file: File) {
+    if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+      showToast("SVG files are not supported.", "error");
+      return;
+    }
     selectedFile = file;
     const reader = new FileReader();
     reader.onload = (e) => {
