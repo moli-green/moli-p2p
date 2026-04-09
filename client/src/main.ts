@@ -585,9 +585,6 @@ async function addImageToGallery(
     const thumbUrl = URL.createObjectURL(thumbBlob);
     const timestamp = Date.now();
 
-    // Use originalSenderId if available, fallback to remotePeerId (which might be the relaying peer's ephemeral ID)
-    const displaySenderId = originalSenderId || remotePeerId;
-
     const container = createGalleryItem(thumbUrl, id, isLocal, isPinned, {
       onPinToggle: (isNowPinned) => {
         const item = imageStore.find(i => i.id === id);
@@ -668,7 +665,7 @@ async function addImageToGallery(
 
           lightbox.appendChild(lbImg);
       }
-    }, name, displaySenderId);
+    }, name);
 
     // Store Item
     const newItem: ImageItem = {
