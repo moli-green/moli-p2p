@@ -408,45 +408,55 @@ function checkEviction() {
 
   // Sort once, then batch remove the oldest items until under the limit
   const unpinned = imageStore.filter(i => !i.isPinned).sort((a, b) => a.timestamp - b.timestamp);
-  let evictionCount = imageStore.length - MAX_GALLERY_ITEMS;
+  const evictionLimit = imageStore.length - MAX_GALLERY_ITEMS;
+  const idsToRemove = new Set<string>();
 
-  for (let i = 0; i < unpinned.length && evictionCount > 0; i++) {
-    const toRemove = unpinned[i];
-    const index = imageStore.findIndex(item => item.id === toRemove.id);
+  for (let i = 0; i < unpinned.length && i < evictionLimit; i++) {
+    const item = unpinned[i];
+    idsToRemove.add(item.id);
 
-    if (index > -1) {
-      if (gallery.contains(toRemove.element)) {
-        gallery.removeChild(toRemove.element);
-      }
-      const elWithCleanup = toRemove.element as HTMLElement & { cleanup?: () => void };
-      if (typeof elWithCleanup.cleanup === 'function') {
-        elWithCleanup.cleanup();
-      }
-      URL.revokeObjectURL(toRemove.url);
-      imageStoreMap.delete(toRemove.hash);
-      imageStore.splice(index, 1);
-      evictionCount--;
+    if (gallery.contains(item.element)) {
+      gallery.removeChild(item.element);
     }
+    const elWithCleanup = item.element as HTMLElement & { cleanup?: () => void };
+    if (typeof elWithCleanup.cleanup === 'function') {
+      elWithCleanup.cleanup();
+    }
+    URL.revokeObjectURL(item.url);
+    imageStoreMap.delete(item.hash);
   }
+
+  if (idsToRemove.size > 0) {
+    const filteredStore = imageStore.filter(item => !idsToRemove.has(item.id));
+    imageStore.length = 0;
+    imageStore.push(...filteredStore);
+  }
+
   updateEmptyState();
 }
 
 function removeImageFromGallery(hash: string) {
   imageStoreMap.delete(hash);
-  for (let i = imageStore.length - 1; i >= 0; i--) {
-    if (imageStore[i].hash === hash) {
-      const item = imageStore[i];
-      if (gallery.contains(item.element)) {
-        gallery.removeChild(item.element);
-      }
-      const elWithCleanup = item.element as HTMLElement & { cleanup?: () => void };
-      if (typeof elWithCleanup.cleanup === 'function') {
-        elWithCleanup.cleanup();
-      }
-      URL.revokeObjectURL(item.url);
-      imageStore.splice(i, 1);
+
+  const itemsToRemove = imageStore.filter(item => item.hash === hash);
+
+  for (const item of itemsToRemove) {
+    if (gallery.contains(item.element)) {
+      gallery.removeChild(item.element);
     }
+    const elWithCleanup = item.element as HTMLElement & { cleanup?: () => void };
+    if (typeof elWithCleanup.cleanup === 'function') {
+      elWithCleanup.cleanup();
+    }
+    URL.revokeObjectURL(item.url);
   }
+
+  if (itemsToRemove.length > 0) {
+    const filteredStore = imageStore.filter(item => item.hash !== hash);
+    imageStore.length = 0;
+    imageStore.push(...filteredStore);
+  }
+
   updateEmptyState();
 }
 
