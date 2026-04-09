@@ -6,20 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && mkdir -p dist/source && cp -r src/* dist/source/",
-    "preview": "vite preview",
-    "test": "bun test"
+    "preview": "vite preview"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.8.9",
-    "@types/bun": "^1.3.11",
-    "happy-dom": "^20.8.9",
     "terser": "^5.46.0",
     "typescript": "~5.9.3",
     "vite": "^7.2.4"
   },
   "dependencies": {
     "@types/uuid": "^10.0.0",
-    "jdenticon": "^3.3.0",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1",
     "uuid": "^13.0.0",
