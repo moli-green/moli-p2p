@@ -180,6 +180,14 @@ app.appendChild(appContainer);
 function closeLightbox() {
   lightbox.style.display = 'none';
   while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
+
+  if (activeLightboxUrl) {
+    URL.revokeObjectURL(activeLightboxUrl);
+    activeLightboxUrl = null;
+  }
+
+  // Ensure default behavior is restored
+  lightbox.onclick = closeLightbox;
 }
 
 // UI Event Listeners
@@ -208,6 +216,7 @@ const imageStoreMap = new Map<string, ImageItem>();
 const renderQueue: ImageItem[] = [];
 
 let isPaused = false;
+let activeLightboxUrl: string | null = null;
 let renderInterval = RENDER_INTERVAL_MS;
 let tickerTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -658,15 +667,11 @@ async function addImageToGallery(
           const lbImg = document.createElement('img');
 
           // Generate an ephemeral URL for the original high-res blob
-          const originalUrl = URL.createObjectURL(blob);
-          lbImg.src = originalUrl;
+          activeLightboxUrl = URL.createObjectURL(blob);
+          lbImg.src = activeLightboxUrl;
 
-          // Revoke the original URL when lightbox is closed
-          // Fix: Prevent memory leak from nested closures
-          lightbox.onclick = () => {
-             URL.revokeObjectURL(originalUrl);
-             closeLightbox();
-          };
+          // Standard close behavior handles revocation
+          lightbox.onclick = closeLightbox;
 
           lightbox.appendChild(lbImg);
       }
