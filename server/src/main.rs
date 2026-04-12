@@ -173,12 +173,21 @@ async fn get_ice_config(
         }
     }
 
-    let secret = std::env::var("TURN_SECRET").expect("TURN_SECRET must be set");
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + TURN_TTL;
+    let secret = match std::env::var("TURN_SECRET") {
+        Ok(s) => s,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Server Configuration Error").into_response(),
+    };
+    let timestamp = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_secs() + TURN_TTL,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Clock Error").into_response(),
+    };
     let username = format!("{}:moli", timestamp);
     
     type HmacSha1 = Hmac<Sha1>;
-    let mut mac = HmacSha1::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
+    let mut mac = match HmacSha1::new_from_slice(secret.as_bytes()) {
+        Ok(m) => m,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "HMAC Error").into_response(),
+    };
     mac.update(username.as_bytes());
     let credential = STANDARD.encode(mac.finalize().into_bytes());
 
