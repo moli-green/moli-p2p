@@ -832,6 +832,7 @@ const network = new P2PNetwork(
   (peerId: string, hashes: string[]) => { // Inventory Callback
     hashes.forEach(hash => {
       // Pull Logic: Request missing items automatically
+      // Optimization: O(1) lookup using imageStoreMap instead of O(N) array iteration/Set allocation
       const weHaveIt = imageStoreMap.has(hash);
       if (!weHaveIt && !network.isBlacklisted(hash)) {
         const session = network.sessions.get(peerId);
