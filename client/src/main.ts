@@ -915,7 +915,11 @@ if (idBurnBtn) {
     const p1 = document.createElement('p');
     p1.style.opacity = '0.8';
     p1.style.marginBottom = '5px';
-    p1.innerHTML = 'You are about to destroy your <strong>Identity</strong> and <strong>Vault</strong>.';
+    const strongIdentity = document.createElement('strong');
+    strongIdentity.textContent = 'Identity';
+    const strongVault = document.createElement('strong');
+    strongVault.textContent = 'Vault';
+    p1.append('You are about to destroy your ', strongIdentity, ' and ', strongVault, '.');
 
     const p2 = document.createElement('p');
     p2.style.fontSize = '0.85em';
@@ -1005,7 +1009,7 @@ function checkMobileWarning(): Promise<void> {
     card.className = 'mobile-gate-card';
 
     const h2 = document.createElement('h2');
-    h2.innerHTML = '⚠️ Mobile Device Detected';
+    h2.textContent = '⚠️ Mobile Device Detected';
 
     const p1 = document.createElement('p');
     p1.textContent = 'Moli P2P is a heavy WebRTC mesh protocol designed for Desktop PCs and Wi-Fi networks.';
@@ -1025,7 +1029,7 @@ function checkMobileWarning(): Promise<void> {
 
     const agreeBtn = document.createElement('button');
     agreeBtn.className = 'agree-btn';
-    agreeBtn.innerHTML = 'I Understand Risks<br>Connect Anyway';
+    agreeBtn.append('I Understand Risks', document.createElement('br'), 'Connect Anyway');
     agreeBtn.onclick = () => {
       document.body.removeChild(overlay);
       resolve();
@@ -1272,11 +1276,17 @@ function showHelpModal() {
   const h3Philo = document.createElement('h3');
   h3Philo.textContent = '⏳ Ephemeral Capacity';
   const pPhilo = document.createElement('p');
-  pPhilo.innerHTML = `
-    <strong>Max Capacity: 50 Images</strong><br>
-    Your browser holds the latest 50 souls. When new ones arrive, the oldest unpinned ones are extinguished to make room.<br>
-    <em>"The fire must breathe."</em>
-  `;
+  const strongPhilo = document.createElement('strong');
+  strongPhilo.textContent = 'Max Capacity: 50 Images';
+  const emPhilo = document.createElement('em');
+  emPhilo.textContent = '"The fire must breathe."';
+  pPhilo.append(
+    strongPhilo,
+    document.createElement('br'),
+    'Your browser holds the latest 50 souls. When new ones arrive, the oldest unpinned ones are extinguished to make room.',
+    document.createElement('br'),
+    emPhilo
+  );
   sectionPhilo.appendChild(h3Philo);
   sectionPhilo.appendChild(pPhilo);
 
@@ -1287,11 +1297,15 @@ function showHelpModal() {
   h3Act.textContent = '🎨 Actions';
 
   const pPin = document.createElement('p');
-  pPin.innerHTML = `<strong>📌 Pin (Save)</strong><br>Saves a soul to your local Vault. Pinned items are protected from decay and re-broadcasted when you join.`;
+  const strongPin = document.createElement('strong');
+  strongPin.textContent = '📌 Pin (Save)';
+  pPin.append(strongPin, document.createElement('br'), 'Saves a soul to your local Vault. Pinned items are protected from decay and re-broadcasted when you join.');
 
   const pBroad = document.createElement('p');
   pBroad.style.marginTop = '10px';
-  pBroad.innerHTML = `<strong>✨ Broadcast</strong><br>Uploads a soul to the mesh. It propagates to connected peers immediately.`;
+  const strongBroad = document.createElement('strong');
+  strongBroad.textContent = '✨ Broadcast';
+  pBroad.append(strongBroad, document.createElement('br'), 'Uploads a soul to the mesh. It propagates to connected peers immediately.');
 
   sectionActions.appendChild(h3Act);
   sectionActions.appendChild(pPin);
@@ -1304,15 +1318,26 @@ function showHelpModal() {
   h3Safe.textContent = '🛡️ Sovereign Safety';
 
   const pBlur = document.createElement('p');
-  pBlur.innerHTML = `<strong>👁️ Blur by Default</strong><br>All incoming souls are blurred. You must click to reveal them.`;
+  const strongBlur = document.createElement('strong');
+  strongBlur.textContent = '👁️ Blur by Default';
+  pBlur.append(strongBlur, document.createElement('br'), 'All incoming souls are blurred. You must click to reveal them.');
 
   const pBurn = document.createElement('p');
   pBurn.style.marginTop = '10px';
-  pBurn.innerHTML = `<strong>🗑️ Remove / Burn</strong><br>Removes content from <em>your</em> device and blacklists it locally. <span style="color:#ff8888">You cannot delete files from other peers.</span>`;
+  const strongBurn = document.createElement('strong');
+  strongBurn.textContent = '🗑️ Remove / Burn';
+  const emBurn = document.createElement('em');
+  emBurn.textContent = 'your';
+  const spanBurn = document.createElement('span');
+  spanBurn.style.color = '#ff8888';
+  spanBurn.textContent = 'You cannot delete files from other peers.';
+  pBurn.append(strongBurn, document.createElement('br'), 'Removes content from ', emBurn, ' device and blacklists it locally. ', spanBurn);
 
   const pReset = document.createElement('p');
   pReset.style.marginTop = '10px';
-  pReset.innerHTML = `<strong>🔥 ID Reset</strong><br>Click the flame icon in the header to destroy your Identity and Vault forever.`;
+  const strongReset = document.createElement('strong');
+  strongReset.textContent = '🔥 ID Reset';
+  pReset.append(strongReset, document.createElement('br'), 'Click the flame icon in the header to destroy your Identity and Vault forever.');
 
   sectionSafe.appendChild(h3Safe);
   sectionSafe.appendChild(pBlur);
@@ -1339,11 +1364,19 @@ function showHelpModal() {
   h3Disc.style.color = '#ffcc00';
 
   const pServer = document.createElement('p');
-  pServer.innerHTML = `<strong>Your Device Is a Server</strong><br>By joining the mesh, your device actively distributes encrypted content to other peers.`;
+  const strongServer = document.createElement('strong');
+  strongServer.textContent = 'Your Device Is a Server';
+  pServer.append(strongServer, document.createElement('br'), 'By joining the mesh, your device actively distributes encrypted content to other peers.');
 
   const pBandwidth = document.createElement('p');
   pBandwidth.style.marginTop = '10px';
-  pBandwidth.innerHTML = `<strong>Resource Contribution</strong><br>You are contributing your <strong>Bandwidth</strong> and <strong>CPU</strong> to keep the network alive. Moli P2P has no central storage.`;
+  const strongContribution = document.createElement('strong');
+  strongContribution.textContent = 'Resource Contribution';
+  const strongBandwidth = document.createElement('strong');
+  strongBandwidth.textContent = 'Bandwidth';
+  const strongCPU = document.createElement('strong');
+  strongCPU.textContent = 'CPU';
+  pBandwidth.append(strongContribution, document.createElement('br'), 'You are contributing your ', strongBandwidth, ' and ', strongCPU, ' to keep the network alive. Moli P2P has no central storage.');
 
   sectionDisclaimer.appendChild(h3Disc);
   sectionDisclaimer.appendChild(pServer);
