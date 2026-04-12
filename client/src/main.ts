@@ -524,7 +524,7 @@ function releaseUploadSlot() {
 }
 
 function shareInventory() {
-  const hashes = imageStore.map(i => i.hash);
+  const hashes = Array.from(imageStoreMap.keys());
   network.sessions.forEach((s: PeerSession) => {
     if (s.isConnected) s.sendInventory(hashes);
   });
@@ -709,10 +709,9 @@ async function initVaultAndLoad(): Promise<void> {
 
   if (pinnedItems.length > 0) {
     console.log(`[Vault] Restoring ${pinnedItems.length} pinned souls...`);
-    const existingHashes = new Set(imageStore.map(i => i.hash));
 
     for (const item of pinnedItems) {
-      if (!existingHashes.has(item.hash)) {
+      if (!imageStoreMap.has(item.hash)) {
         // Fix: Determine isLocal based on originalSenderId vs persistent identity peerId
         // If originalSenderId is missing, assume it's legacy local or we don't know (treat as local to be safe/consistent with old behavior)
         // If originalSenderId exists and != identity.peerId, it is NOT local.
@@ -814,11 +813,11 @@ const network = new P2PNetwork(
       console.log(`[Sync] Handshake with ${session.peerId}. Sending Inventory...`);
 
       // 1. Send Inventory (Anti-Entropy / Pull Enabler) - NO OPTIMISTIC PUSH (Ghost Fix)
-      const allHashes = imageStore.map(i => i.hash);
+      const allHashes = Array.from(imageStoreMap.keys());
       session.sendInventory(allHashes);
     } else if (type === 'sync-request') {
       console.log(`[Sync] Received Sync Request from ${session.peerId}. Sending Inventory...`);
-      const allHashes = imageStore.map(i => i.hash);
+      const allHashes = Array.from(imageStoreMap.keys());
       session.sendInventory(allHashes);
     }
   },
@@ -831,12 +830,9 @@ const network = new P2PNetwork(
     releaseDownloadSlot();
   },
   (peerId: string, hashes: string[]) => { // Inventory Callback
-    // Pre-calculate existing hashes to make the lookup O(1) instead of O(N) inside the loop
-    const existingHashes = new Set(imageStore.map(i => i.hash));
-
     hashes.forEach(hash => {
       // Pull Logic: Request missing items automatically
-      const weHaveIt = existingHashes.has(hash);
+      const weHaveIt = imageStoreMap.has(hash);
       if (!weHaveIt && !network.isBlacklisted(hash)) {
         const session = network.sessions.get(peerId);
         if (session) {
