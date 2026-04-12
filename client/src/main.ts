@@ -533,7 +533,7 @@ function releaseUploadSlot() {
 }
 
 function shareInventory() {
-  const hashes = imageStore.map(i => i.hash);
+  const hashes = Array.from(imageStoreMap.keys());
   network.sessions.forEach((s: PeerSession) => {
     if (s.isConnected) s.sendInventory(hashes);
   });
@@ -818,11 +818,11 @@ const network = new P2PNetwork(
       console.log(`[Sync] Handshake with ${session.peerId}. Sending Inventory...`);
 
       // 1. Send Inventory (Anti-Entropy / Pull Enabler) - NO OPTIMISTIC PUSH (Ghost Fix)
-      const allHashes = imageStore.map(i => i.hash);
+      const allHashes = Array.from(imageStoreMap.keys());
       session.sendInventory(allHashes);
     } else if (type === 'sync-request') {
       console.log(`[Sync] Received Sync Request from ${session.peerId}. Sending Inventory...`);
-      const allHashes = imageStore.map(i => i.hash);
+      const allHashes = Array.from(imageStoreMap.keys());
       session.sendInventory(allHashes);
     }
   },
