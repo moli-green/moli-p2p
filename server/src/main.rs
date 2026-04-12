@@ -111,20 +111,21 @@ async fn get_ice_config(
     let ip = addr.ip();
 
     // SECURITY: Origin Validation
-    let allowed_origin = match std::env::var("ALLOWED_ORIGIN") {
+    let allowed_origin_raw = match std::env::var("ALLOWED_ORIGIN") {
         Ok(val) => val,
         Err(_) => {
             println!("CRITICAL: ALLOWED_ORIGIN not set. Rejecting ICE config request.");
             return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
         }
     };
+    let allowed_origin = allowed_origin_raw.trim_end_matches('/');
 
     let origin_str = headers.get("origin").and_then(|v| v.to_str().ok());
     let referer_str = headers.get("referer").and_then(|v| v.to_str().ok());
 
     if let Some(origin) = origin_str {
         // If Origin is present, it must match exactly
-        if origin != allowed_origin.as_str() {
+        if origin != allowed_origin {
             println!("ICE Config Origin mismatch: {:?} != {}", origin, allowed_origin);
             return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
         }
@@ -132,7 +133,7 @@ async fn get_ice_config(
         // Fallback to Referer if Origin is omitted
         // Must be exact match or have a trailing slash to prevent prefix bypass (e.g., moli-green.is.attacker.com)
         let allowed_with_slash = format!("{}/", allowed_origin);
-        if referer != allowed_origin.as_str() && !referer.starts_with(&allowed_with_slash) {
+        if referer != allowed_origin && !referer.starts_with(&allowed_with_slash) {
             println!("ICE Config Referer mismatch: {:?} != {}", referer, allowed_origin);
             return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
         }
@@ -216,16 +217,17 @@ async fn ws_handler(
     let ip = addr.ip();
 
     // SECURITY: Origin Validation
-    let allowed_origin = match std::env::var("ALLOWED_ORIGIN") {
+    let allowed_origin_raw = match std::env::var("ALLOWED_ORIGIN") {
         Ok(val) => val,
         Err(_) => {
             println!("CRITICAL: ALLOWED_ORIGIN not set. Rejecting connection.");
             return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
         }
     };
+    let allowed_origin = allowed_origin_raw.trim_end_matches('/');
 
     let origin_str = headers.get("origin").and_then(|v| v.to_str().ok());
-    if origin_str != Some(allowed_origin.as_str()) {
+    if origin_str != Some(allowed_origin) {
         println!("Origin mismatch or missing: {:?} != {}", origin_str, allowed_origin);
         return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
     }
