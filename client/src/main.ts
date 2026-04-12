@@ -714,10 +714,9 @@ async function initVaultAndLoad(): Promise<void> {
 
   if (pinnedItems.length > 0) {
     console.log(`[Vault] Restoring ${pinnedItems.length} pinned souls...`);
-    const existingHashes = new Set(imageStore.map(i => i.hash));
 
     for (const item of pinnedItems) {
-      if (!existingHashes.has(item.hash)) {
+      if (!imageStoreMap.has(item.hash)) {
         // Fix: Determine isLocal based on originalSenderId vs persistent identity peerId
         // If originalSenderId is missing, assume it's legacy local or we don't know (treat as local to be safe/consistent with old behavior)
         // If originalSenderId exists and != identity.peerId, it is NOT local.
@@ -836,12 +835,10 @@ const network = new P2PNetwork(
     releaseDownloadSlot();
   },
   (peerId: string, hashes: string[]) => { // Inventory Callback
-    // Pre-calculate existing hashes to make the lookup O(1) instead of O(N) inside the loop
-    const existingHashes = new Set(imageStore.map(i => i.hash));
-
     hashes.forEach(hash => {
       // Pull Logic: Request missing items automatically
-      const weHaveIt = existingHashes.has(hash);
+      // Optimization: O(1) lookup using imageStoreMap instead of O(N) array iteration/Set allocation
+      const weHaveIt = imageStoreMap.has(hash);
       if (!weHaveIt && !network.isBlacklisted(hash)) {
         const session = network.sessions.get(peerId);
         if (session) {
