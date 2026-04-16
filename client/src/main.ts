@@ -12,6 +12,7 @@ import { bufferToHex, createThumbnail } from './utils';
 import type { Result } from './lib/Result';
 import { ok, err } from './lib/Result';
 import { showToast, createGalleryItem } from './ui';
+import type { GalleryItemElement } from './ui';
 
 declare global {
   interface Window {
@@ -427,7 +428,7 @@ function checkEviction() {
     if (gallery.contains(item.element)) {
       gallery.removeChild(item.element);
     }
-    const elWithCleanup = item.element as HTMLElement & { cleanup?: () => void };
+    const elWithCleanup = item.element as GalleryItemElement;
     if (typeof elWithCleanup.cleanup === 'function') {
       elWithCleanup.cleanup();
     }
@@ -453,7 +454,7 @@ function removeImageFromGallery(hash: string) {
     if (gallery.contains(item.element)) {
       gallery.removeChild(item.element);
     }
-    const elWithCleanup = item.element as HTMLElement & { cleanup?: () => void };
+    const elWithCleanup = item.element as GalleryItemElement;
     if (typeof elWithCleanup.cleanup === 'function') {
       elWithCleanup.cleanup();
     }
