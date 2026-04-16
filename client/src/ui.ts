@@ -14,6 +14,10 @@ export function showToast(message: string, type: 'info' | 'warn' | 'error' | 'su
     }, TOAST_DURATION_MS);
 }
 
+export interface GalleryItemElement extends HTMLDivElement {
+    cleanup: () => void;
+}
+
 export function createGalleryItem(
     url: string,
     _id: string,
@@ -26,8 +30,8 @@ export function createGalleryItem(
         onContainerClick: (isBlurred: boolean) => void,
     },
     _caption?: string
-): HTMLElement {
-    const container = document.createElement('div');
+): GalleryItemElement {
+    const container = document.createElement('div') as GalleryItemElement;
     container.className = 'gallery-item';
 
     const img = document.createElement('img');
@@ -123,7 +127,7 @@ export function createGalleryItem(
     container.appendChild(overlay);
 
     // Attach a cleanup method to the element
-    (container as any).cleanup = () => {
+    container.cleanup = () => {
         img.removeEventListener('click', handleImageClick);
         container.removeEventListener('click', handleContainerClick);
         pinBtn.removeEventListener('click', handlePinClick);
