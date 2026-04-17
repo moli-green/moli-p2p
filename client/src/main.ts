@@ -214,6 +214,7 @@ interface ImageItem {
 
 const imageStore: ImageItem[] = [];
 const imageStoreMap = new Map<string, ImageItem>();
+let cachedInventoryHashes: string[] | null = null;
 const renderQueue: ImageItem[] = [];
 
 let isPaused = false;
@@ -434,6 +435,7 @@ function checkEviction() {
     }
     URL.revokeObjectURL(item.url);
     imageStoreMap.delete(item.hash);
+    cachedInventoryHashes = null;
   }
 
   if (idsToRemove.size > 0) {
@@ -447,6 +449,7 @@ function checkEviction() {
 
 function removeImageFromGallery(hash: string) {
   imageStoreMap.delete(hash);
+  cachedInventoryHashes = null;
 
   const itemsToRemove = imageStore.filter(item => item.hash === hash);
 
@@ -534,7 +537,10 @@ function releaseUploadSlot() {
 }
 
 function shareInventory() {
-  const hashes = Array.from(imageStoreMap.keys());
+  if (!cachedInventoryHashes) {
+    cachedInventoryHashes = Array.from(imageStoreMap.keys());
+  }
+  const hashes = cachedInventoryHashes;
   network.sessions.forEach((s: PeerSession) => {
     if (s.isConnected) s.sendInventory(hashes);
   });
@@ -694,6 +700,7 @@ async function addImageToGallery(
       publicKeyBase64
     };
     imageStoreMap.set(hash, newItem);
+    cachedInventoryHashes = null;
     imageStore.push(newItem);
 
     renderQueue.push(newItem);
@@ -819,11 +826,17 @@ const network = new P2PNetwork(
       console.log(`[Sync] Handshake with ${session.peerId}. Sending Inventory...`);
 
       // 1. Send Inventory (Anti-Entropy / Pull Enabler) - NO OPTIMISTIC PUSH (Ghost Fix)
-      const allHashes = Array.from(imageStoreMap.keys());
+      if (!cachedInventoryHashes) {
+        cachedInventoryHashes = Array.from(imageStoreMap.keys());
+      }
+      const allHashes = cachedInventoryHashes;
       session.sendInventory(allHashes);
     } else if (type === 'sync-request') {
       console.log(`[Sync] Received Sync Request from ${session.peerId}. Sending Inventory...`);
-      const allHashes = Array.from(imageStoreMap.keys());
+      if (!cachedInventoryHashes) {
+        cachedInventoryHashes = Array.from(imageStoreMap.keys());
+      }
+      const allHashes = cachedInventoryHashes;
       session.sendInventory(allHashes);
     }
   },
