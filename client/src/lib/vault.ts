@@ -86,7 +86,7 @@ export class Vault {
                 const items = results.map((data: any) => {
                     if (data.buffer) {
                         data.blob = new Blob([data.buffer], { type: data.mime });
-                        // data.buffer = undefined; // Optional: free memory?
+                        delete data.buffer; // Free memory by removing the large ArrayBuffer
                     }
                     return data as VaultItem;
                 });
