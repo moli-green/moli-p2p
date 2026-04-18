@@ -608,7 +608,7 @@ async function addImageToGallery(
 
     const container = createGalleryItem(thumbUrl, id, isLocal, isPinned, {
       onPinToggle: (isNowPinned) => {
-        const item = imageStore.find(i => i.id === id);
+        const item = imageStoreMap.get(hash);
         if (item) {
           item.isPinned = isNowPinned;
           if (item.isPinned) {
