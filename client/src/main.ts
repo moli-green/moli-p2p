@@ -253,7 +253,6 @@ function processTicker() {
       console.log(`[Ticker] Processing item. Queue remaining: ${renderQueue.length}`);
       const nextItem = renderQueue.shift()!;
 
-      // FIX: Check if item is still in imageStore before appending. (Ghost Image Fix)
       // Optimization: O(1) lookup using imageStoreMap instead of O(N) array some()
       const exists = imageStoreMap.has(nextItem.hash);
       if (!exists) {
