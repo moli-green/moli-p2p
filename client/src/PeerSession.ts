@@ -712,7 +712,6 @@ export class PeerSession {
 
     private handlePong() {
         this.lastSeen = Date.now();
-        // console.log(`[${this.myId}] Pong received from ${this.peerId}`);
     }
 
     private startTransferTimeout() {
