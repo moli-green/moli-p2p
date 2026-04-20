@@ -48,7 +48,8 @@ async function runBench() {
 
   // Print raw values to console
   console.log(`__SEQ__${seqTime}__PAR__${parTime}`);
-  document.body.innerHTML = `Sequential: ${seqTime.toFixed(2)}ms<br>Parallel: ${parTime.toFixed(2)}ms`;
+  document.body.style.whiteSpace = 'pre-wrap';
+  document.body.textContent = `Sequential: ${seqTime.toFixed(2)}ms\nParallel: ${parTime.toFixed(2)}ms`;
 }
 runBench();
 </script>
