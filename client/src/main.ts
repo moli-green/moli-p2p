@@ -724,7 +724,7 @@ async function initVaultAndLoad(): Promise<void> {
 
     for (const item of pinnedItems) {
       if (!imageStoreMap.has(item.hash)) {
-        // Fix: Determine isLocal based on originalSenderId vs persistent identity peerId
+        // Determine isLocal based on originalSenderId vs persistent identity peerId
         // If originalSenderId is missing, assume it's legacy local or we don't know (treat as local to be safe/consistent with old behavior)
         // If originalSenderId exists and != identity.peerId, it is NOT local.
         const isLegacyOrOwn = !item.originalSenderId || item.originalSenderId === network.identity.peerId;
