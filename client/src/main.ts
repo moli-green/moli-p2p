@@ -212,7 +212,7 @@ interface ImageItem {
   publicKeyBase64?: string;
 }
 
-const imageStore: ImageItem[] = [];
+let imageStore: ImageItem[] = [];
 const imageStoreMap = new Map<string, ImageItem>();
 let cachedInventoryHashes: string[] | null = null;
 const renderQueue: ImageItem[] = [];
@@ -438,9 +438,7 @@ function checkEviction() {
   }
 
   if (idsToRemove.size > 0) {
-    const filteredStore = imageStore.filter(item => !idsToRemove.has(item.id));
-    imageStore.length = 0;
-    imageStore.push(...filteredStore);
+    imageStore = imageStore.filter(item => !idsToRemove.has(item.id));
   }
 
   updateEmptyState();
@@ -464,9 +462,7 @@ function removeImageFromGallery(hash: string) {
   }
 
   if (itemsToRemove.length > 0) {
-    const filteredStore = imageStore.filter(item => item.hash !== hash);
-    imageStore.length = 0;
-    imageStore.push(...filteredStore);
+    imageStore = imageStore.filter(item => item.hash !== hash);
   }
 
   updateEmptyState();
