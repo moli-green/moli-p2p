@@ -73,7 +73,7 @@ struct IceServer {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt::init();
     
     // Developer Convenience: Load .env if present (dev mode)
@@ -99,8 +99,9 @@ async fn main() {
 
     let addr = SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, 9090));
     println!("Listening on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
+    Ok(())
 }
 
 async fn get_ice_config(
