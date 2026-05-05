@@ -134,9 +134,7 @@ export function createGalleryItem(
         trashBtn.removeEventListener('click', handleTrashClick);
 
         // Clear DOM references
-        while (container.firstChild) {
-            container.removeChild(container.firstChild);
-        }
+        container.replaceChildren();
     };
 
     return container;
