@@ -381,14 +381,24 @@ function updateBufferUI() {
 }
 
 function updateDecayUI() {
-  const sorted = [...imageStore].sort((a, b) => a.timestamp - b.timestamp);
   const total = imageStore.length;
+
+  // Clear decay classes from all items
   imageStore.forEach(item => {
     item.element.classList.remove('decay-stage-1', 'decay-stage-2', 'decay-stage-3');
-    if (item.isPinned) return;
-    const ageIndex = sorted.indexOf(item);
+  });
 
-    // Decay visual logic (roughly based on position among oldest)
+  if (total < 7) return;
+
+  // Filter unpinned items and sort them by timestamp (oldest first)
+  const sortedUnpinned = imageStore
+    .filter(item => !item.isPinned)
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  // Apply decay visual logic to the 3 oldest unpinned items
+  for (let ageIndex = 0; ageIndex < Math.min(3, sortedUnpinned.length); ageIndex++) {
+    const item = sortedUnpinned[ageIndex];
+
     if (total >= 7 && ageIndex === 0) {
       item.element.classList.add(total >= 9 ? 'decay-stage-3' : total === 8 ? 'decay-stage-2' : 'decay-stage-1');
     } else if (total >= 8 && ageIndex === 1) {
@@ -396,7 +406,7 @@ function updateDecayUI() {
     } else if (total >= 9 && ageIndex === 2) {
       item.element.classList.add('decay-stage-1');
     }
-  });
+  }
 }
 
 
