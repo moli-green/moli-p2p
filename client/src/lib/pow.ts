@@ -4,6 +4,7 @@ export async function generatePoW(peerId: string, timestamp: number, difficulty:
     const start = Date.now();
     const prefix = '0'.repeat(difficulty);
     let nonce = 0;
+    let lastYield = Date.now();
 
     console.log(`[PoW] Starting challenge (Difficulty: ${difficulty})...`);
 
@@ -21,9 +22,13 @@ export async function generatePoW(peerId: string, timestamp: number, difficulty:
 
         nonce++;
 
-        // Yield to browser UI thread every 500 iterations to prevent freezing
-        if (nonce % 500 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0));
+        // Check time every 100 iterations to avoid excessive Date.now() calls
+        if (nonce % 100 === 0) {
+            // Yield to browser UI thread if more than 20ms have passed to prevent freezing
+            if (Date.now() - lastYield > 20) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+                lastYield = Date.now();
+            }
         }
     }
 }
