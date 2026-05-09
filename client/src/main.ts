@@ -868,7 +868,6 @@ const network = new P2PNetwork(
     });
   },
   (session: PeerSession, data: FileOffer) => { // Offer File Callback
-    // If trusted, we might prioritize download? For now just track.
     console.log(`[Main] Queueing download ${data.name} from ${session.peerId}`);
     downloadQueue.push({ session, transferId: data.transferId, meta: data });
     processDownloadQueue();
@@ -969,14 +968,6 @@ if (idBurnBtn) {
       try {
         Vault.close(); // Close Vault DB
         network.close(); // Close Network (Peer connections + Blacklist DB?) 
-        // Note: Network.close() might not close Blacklist DB if it's separate.
-        // But main.ts doesn't hold reference to Blacklist DB connection directly, network does?
-        // Actually initBlacklist opens it. We need to close it.
-        // But we don't have a handle to it here.
-        // IndexedDB.close() is on the db instance.
-        // Let's rely on reload() clearing memory if delete fails?
-        // No, deleteDatabase needs connections closed.
-        // Let's try best effort.
       } catch (e) { console.error("Error closing DBs", e); }
 
       // 1. Wipe Secrets from LocalStorage
