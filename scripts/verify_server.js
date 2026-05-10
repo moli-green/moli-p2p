@@ -11,15 +11,12 @@ async function testJsonInjection() {
         ws.on('open', () => {
             console.log('  Connected.');
 
-            // 1. Valid Object
             ws.send(JSON.stringify({ type: 'test', content: 'valid' }));
             console.log('  Sent Valid Object. (Should be accepted)');
 
-            // 2. Array Injection
             ws.send(JSON.stringify(['hack', { senderId: 'fake' }]));
             console.log('  Sent JSON Array. (Should be dropped silently)');
 
-            // 3. Primitive Injection
             ws.send(JSON.stringify("just a string"));
             console.log('  Sent Primitive. (Should be dropped silently)');
 
