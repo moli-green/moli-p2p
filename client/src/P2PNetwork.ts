@@ -391,10 +391,6 @@ export class P2PNetwork {
         }
 
         let sentCount = 0;
-        // Logic: Pass originalSenderId. If undefined (origin), use identity.peerId in peerSession.sendImage?
-        // Actually PeerSession.sendImage will handle it if we pass it. 
-        // We should pass identity.peerId as originalSenderId if it's new.
-        // Fix: Use presence in options object to determine if originalSenderId was explicitly passed
         const effectiveSender = ('originalSenderId' in options) ? options.originalSenderId : this.identity.peerId;
         const ttl = options.ttl ?? GOSSIP_TTL;
 
