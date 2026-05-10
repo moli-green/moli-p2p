@@ -458,9 +458,10 @@ function removeImageFromGallery(hash: string) {
   imageStoreMap.delete(hash);
   cachedInventoryHashes = null;
 
-  const itemsToRemove = imageStore.filter(item => item.hash === hash);
+  const index = imageStore.findIndex(item => item.hash === hash);
+  if (index !== -1) {
+    const item = imageStore[index];
 
-  for (const item of itemsToRemove) {
     if (gallery.contains(item.element)) {
       gallery.removeChild(item.element);
     }
@@ -469,10 +470,8 @@ function removeImageFromGallery(hash: string) {
       elWithCleanup.cleanup();
     }
     URL.revokeObjectURL(item.url);
-  }
 
-  if (itemsToRemove.length > 0) {
-    imageStore = imageStore.filter(item => item.hash !== hash);
+    imageStore.splice(index, 1);
   }
 
   updateEmptyState();
