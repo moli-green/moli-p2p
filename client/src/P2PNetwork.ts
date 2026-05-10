@@ -1,4 +1,4 @@
-import { SignalSchema, type SignalMessage } from './types';
+import { SignalSchema, type SignalMessage, type BurnSignal } from './types';
 import { PeerSession, type FileOffer } from './PeerSession';
 import { PeerIdentity } from './PeerIdentity';
 import { v4 as uuidv4 } from 'uuid';
@@ -438,7 +438,7 @@ export class P2PNetwork {
             this.onOfferFile?.(session, data as FileOffer); // Specific Callback
         } else if (type === 'burn') {
             // POLICY: Sakoku (Local Only)
-            console.log(`[Network] Burn event for ${(data as any).hash} handled locally. NOT broadcasting.`);
+            console.log(`[Network] Burn event for ${(data as BurnSignal).hash} handled locally. NOT broadcasting.`);
         }
     }
 
