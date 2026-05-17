@@ -3,7 +3,6 @@
 // Rendering & Animation
 export const RENDER_INTERVAL_MS = 250;
 export const MAX_GALLERY_ITEMS = 50;
-export const DECAY_INTERVAL_MS = 5000;
 export const BUFFER_LIMIT = 5;
 
 // Network & Data
