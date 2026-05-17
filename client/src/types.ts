@@ -15,19 +15,6 @@ export const SignalSchema = z.discriminatedUnion('type', [
 
 export type SignalMessage = z.infer<typeof SignalSchema>;
 
-export interface FileMeta {
-    type: 'meta';
-    name: string;
-    size: number;
-    mime: string;
-    hash: string;
-    publicKey?: string; // Base64 SPKI
-    signature?: string; // Base64
-    identityCreatedAt?: number;
-    isPinned?: boolean;
-    tributeTag?: string;
-}
-
 export interface BurnSignal {
     type: 'burn';
     hash: string;
