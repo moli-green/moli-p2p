@@ -11,7 +11,7 @@ import {
 import { bufferToHex, createThumbnail } from './utils';
 import type { Result } from './lib/Result';
 import { ok, err } from './lib/Result';
-import { showToast, createGalleryItem } from './ui';
+import { showToast, createGalleryItem, buildHelpModal } from './ui';
 import type { GalleryItemElement } from './ui';
 
 declare global {
@@ -1265,143 +1265,7 @@ async function showUploadModal() {
 }
 
 function showHelpModal() {
-  lightbox.style.display = 'flex';
-  while (lightbox.firstChild) lightbox.removeChild(lightbox.firstChild);
-
-  const helpModal = document.createElement('div');
-  helpModal.className = 'help-modal';
-  helpModal.onclick = (e) => e.stopPropagation();
-
-  const h2 = document.createElement('h2');
-  h2.textContent = 'Moli P2P Manual';
-
-  const pIntro = document.createElement('p');
-  pIntro.style.opacity = '0.7';
-  pIntro.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
-  pIntro.style.paddingBottom = '15px';
-  pIntro.textContent = 'Welcome to the Autonomous Distributed Gallery. Content exists only as long as someone holds it.';
-
-  // Section 1: Philosophy & Limits
-  const sectionPhilo = document.createElement('div');
-  sectionPhilo.className = 'help-section';
-  const h3Philo = document.createElement('h3');
-  h3Philo.textContent = '⏳ Ephemeral Capacity';
-  const pPhilo = document.createElement('p');
-  const strongPhilo = document.createElement('strong');
-  strongPhilo.textContent = 'Max Capacity: 50 Images';
-  const emPhilo = document.createElement('em');
-  emPhilo.textContent = '"The fire must breathe."';
-  pPhilo.append(
-    strongPhilo,
-    document.createElement('br'),
-    'Your browser holds the latest 50 souls. When new ones arrive, the oldest unpinned ones are extinguished to make room.',
-    document.createElement('br'),
-    emPhilo
-  );
-  sectionPhilo.appendChild(h3Philo);
-  sectionPhilo.appendChild(pPhilo);
-
-  // Section 2: Actions
-  const sectionActions = document.createElement('div');
-  sectionActions.className = 'help-section';
-  const h3Act = document.createElement('h3');
-  h3Act.textContent = '🎨 Actions';
-
-  const pPin = document.createElement('p');
-  const strongPin = document.createElement('strong');
-  strongPin.textContent = '📌 Pin (Save)';
-  pPin.append(strongPin, document.createElement('br'), 'Saves a soul to your local Vault. Pinned items are protected from decay and re-broadcasted when you join.');
-
-  const pBroad = document.createElement('p');
-  pBroad.style.marginTop = '10px';
-  const strongBroad = document.createElement('strong');
-  strongBroad.textContent = '✨ Broadcast';
-  pBroad.append(strongBroad, document.createElement('br'), 'Uploads a soul to the mesh. It propagates to connected peers immediately.');
-
-  sectionActions.appendChild(h3Act);
-  sectionActions.appendChild(pPin);
-  sectionActions.appendChild(pBroad);
-
-  // Section 3: Safety
-  const sectionSafe = document.createElement('div');
-  sectionSafe.className = 'help-section';
-  const h3Safe = document.createElement('h3');
-  h3Safe.textContent = '🛡️ Sovereign Safety';
-
-  const pBlur = document.createElement('p');
-  const strongBlur = document.createElement('strong');
-  strongBlur.textContent = '👁️ Blur by Default';
-  pBlur.append(strongBlur, document.createElement('br'), 'All incoming souls are blurred. You must click to reveal them.');
-
-  const pBurn = document.createElement('p');
-  pBurn.style.marginTop = '10px';
-  const strongBurn = document.createElement('strong');
-  strongBurn.textContent = '🗑️ Remove / Burn';
-  const emBurn = document.createElement('em');
-  emBurn.textContent = 'your';
-  const spanBurn = document.createElement('span');
-  spanBurn.style.color = '#ff8888';
-  spanBurn.textContent = 'You cannot delete files from other peers.';
-  pBurn.append(strongBurn, document.createElement('br'), 'Removes content from ', emBurn, ' device and blacklists it locally. ', spanBurn);
-
-  const pReset = document.createElement('p');
-  pReset.style.marginTop = '10px';
-  const strongReset = document.createElement('strong');
-  strongReset.textContent = '🔥 ID Reset';
-  pReset.append(strongReset, document.createElement('br'), 'Click the flame icon in the header to destroy your Identity and Vault forever.');
-
-  sectionSafe.appendChild(h3Safe);
-  sectionSafe.appendChild(pBlur);
-  sectionSafe.appendChild(pBurn);
-  sectionSafe.appendChild(pReset);
-
-  const closeBtn = document.createElement('button');
-  closeBtn.id = 'close-help-btn';
-  closeBtn.style.width = '100%';
-  closeBtn.style.marginTop = '2rem';
-  closeBtn.textContent = 'Close Manual';
-  closeBtn.onclick = closeLightbox;
-
-  // Section 4: Disclaimer (Deployment Requirements)
-  const sectionDisclaimer = document.createElement('div');
-  sectionDisclaimer.className = 'help-section';
-  sectionDisclaimer.style.borderLeft = '3px solid #ffcc00';
-  sectionDisclaimer.style.paddingLeft = '10px';
-  sectionDisclaimer.style.marginTop = '15px';
-  sectionDisclaimer.style.background = 'rgba(255, 204, 0, 0.05)';
-
-  const h3Disc = document.createElement('h3');
-  h3Disc.textContent = '⚠️ Network Responsibility';
-  h3Disc.style.color = '#ffcc00';
-
-  const pServer = document.createElement('p');
-  const strongServer = document.createElement('strong');
-  strongServer.textContent = 'Your Device Is a Server';
-  pServer.append(strongServer, document.createElement('br'), 'By joining the mesh, your device actively distributes encrypted content to other peers.');
-
-  const pBandwidth = document.createElement('p');
-  pBandwidth.style.marginTop = '10px';
-  const strongContribution = document.createElement('strong');
-  strongContribution.textContent = 'Resource Contribution';
-  const strongBandwidth = document.createElement('strong');
-  strongBandwidth.textContent = 'Bandwidth';
-  const strongCPU = document.createElement('strong');
-  strongCPU.textContent = 'CPU';
-  pBandwidth.append(strongContribution, document.createElement('br'), 'You are contributing your ', strongBandwidth, ' and ', strongCPU, ' to keep the network alive. Moli P2P has no central storage.');
-
-  sectionDisclaimer.appendChild(h3Disc);
-  sectionDisclaimer.appendChild(pServer);
-  sectionDisclaimer.appendChild(pBandwidth);
-
-  helpModal.appendChild(h2);
-  helpModal.appendChild(pIntro);
-  helpModal.appendChild(sectionPhilo);
-  helpModal.appendChild(sectionActions);
-  helpModal.appendChild(sectionSafe);
-  helpModal.appendChild(sectionDisclaimer);
-  helpModal.appendChild(closeBtn);
-
-  lightbox.appendChild(helpModal);
+  buildHelpModal(lightbox, closeLightbox);
 }
 
 // --- Global Event Listeners ---
